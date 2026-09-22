@@ -45,21 +45,21 @@ export default function Sidebar({
     const isActive = location.pathname === item.path
 
     return (
-      <Link
-        key={idx}
-        to={item.path}
-        onClick={onCloseMobile}
-        className={`
-          group flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all
-          ${
-            isActive
-              ? 'bg-blue-50 text-blue-700 font-semibold shadow-2xs'
-              : item.isAction
-                ? 'text-slate-600 hover:text-rose-600 hover:bg-rose-50'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-          }
-        `}
-      >
+      <div key={idx} className={item.isAction ? 'pt-2 mt-2 border-t border-slate-100' : ''}>
+        <Link
+          to={item.path}
+          onClick={onCloseMobile}
+          className={`
+            group flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all
+            ${
+              isActive
+                ? 'bg-blue-50 text-blue-700 font-semibold shadow-2xs'
+                : item.isAction
+                  ? 'text-slate-600 hover:text-rose-600 hover:bg-rose-50'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+            }
+          `}
+        >
         <div className="flex items-center gap-3 min-w-0">
           <IconComponent
             className={`w-5 h-5 shrink-0 transition-colors ${
@@ -88,7 +88,8 @@ export default function Sidebar({
           </span>
         )}
       </Link>
-    )
+    </div>
+  )
   }
 
   const sidebarContent = (

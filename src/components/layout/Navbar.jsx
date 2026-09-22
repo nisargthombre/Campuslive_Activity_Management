@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   CampusLogo,
   IconBell,
-  IconHelp,
   IconChevronDown,
   IconChevronRight,
   IconMenu,
@@ -14,6 +13,7 @@ import {
   IconActivity,
   IconClipboardCheck,
   IconAlertCircle,
+  IconSearch,
 } from '../icons/Icons'
 import SearchBar from '../common/SearchBar'
 import Badge from '../common/Badge'
@@ -36,6 +36,7 @@ export default function Navbar({
   const [searchValue, setSearchValue] = useState('')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false)
   const [notifications, setNotifications] = useState(getStoredNotifications)
 
   const notificationsRef = useRef(null)
@@ -76,10 +77,11 @@ export default function Navbar({
       if (event.key === 'Escape') {
         setIsNotificationsOpen(false)
         setIsProfileOpen(false)
+        setIsMobileSearchOpen(false)
       }
     }
 
-    if (isNotificationsOpen || isProfileOpen) {
+    if (isNotificationsOpen || isProfileOpen || isMobileSearchOpen) {
       document.addEventListener('mousedown', handleClickOutside)
       document.addEventListener('keydown', handleKeyDown)
     }
@@ -88,16 +90,37 @@ export default function Navbar({
       document.removeEventListener('mousedown', handleClickOutside)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isNotificationsOpen, isProfileOpen])
+  }, [isNotificationsOpen, isProfileOpen, isMobileSearchOpen])
 
   const unreadCount = notifications.filter((n) => n.isUnread).length
 
   const roleBadgeVariants = {
     Student: 'primary',
+    Admin: 'secondary',
     Faculty: 'secondary',
     'Super Admin': 'danger',
-    Admin: 'danger',
   }
+
+  const notificationPath =
+    user.role === 'Admin' || user.role === 'Faculty'
+      ? '/faculty/notifications'
+      : user.role === 'Super Admin'
+      ? '/admin/notifications'
+      : '/student/notifications'
+
+  const profilePath =
+    user.role === 'Admin' || user.role === 'Faculty'
+      ? '/faculty/profile'
+      : user.role === 'Super Admin'
+      ? '/admin/profile'
+      : '/student/profile'
+
+  const settingsPath =
+    user.role === 'Admin' || user.role === 'Faculty'
+      ? '/faculty/settings'
+      : user.role === 'Super Admin'
+      ? '/admin/settings'
+      : '/student/settings'
 
   // Toggle notification popover
   const toggleNotifications = () => {
@@ -127,14 +150,7 @@ export default function Navbar({
     setNotifications(updated)
     saveStoredNotifications(updated)
     setIsNotificationsOpen(false)
-    navigate('/student/notifications')
-  }
-
-  // Help / Support icon click
-  const handleHelpClick = () => {
-    setIsNotificationsOpen(false)
-    setIsProfileOpen(false)
-    navigate('/student/support')
+    navigate(notificationPath)
   }
 
   // Profile navigation helper
@@ -159,59 +175,95 @@ export default function Navbar({
   // Search submit on Enter
   const handleSearchKeyDown = (e) => {
     if (e.key === 'Enter' && searchValue.trim()) {
-      navigate(`/student/activities?search=${encodeURIComponent(searchValue.trim())}`)
+      const searchTarget =
+        user.role === 'Admin' || user.role === 'Faculty'
+          ? `/faculty/activities?search=${encodeURIComponent(searchValue.trim())}`
+          : `/student/activities?search=${encodeURIComponent(searchValue.trim())}`
+      navigate(searchTarget)
+      setIsMobileSearchOpen(false)
     }
   }
 
   return (
-    <header className="sticky top-0 z-30 bg-white border-b border-slate-200 h-16">
-      <div className="h-full px-4 sm:px-6 flex items-center justify-between gap-4">
-        {/* LEFT: Logo + Brand + Mobile Menu Button */}
+    <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-2xs h-[72px] transition-all">
+      <div className="h-full px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 md:gap-4 lg:gap-6">
+        {/* ============================================================== */}
+        {/* LEFT SECTION: Branding & Mobile Menu Toggle                    */}
+        {/* ============================================================== */}
         <div className="flex items-center gap-3 shrink-0">
           {onToggleMobileMenu && (
             <button
               type="button"
               onClick={onToggleMobileMenu}
-              className="lg:hidden p-1.5 -ml-1.5 text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-100 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="lg:hidden p-2 -ml-2 text-slate-500 hover:text-slate-800 rounded-xl hover:bg-slate-100 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
               aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
             >
               {isMobileMenuOpen ? (
-                <IconClose className="w-6 h-6" />
+                <IconClose className="w-5 h-5" />
               ) : (
-                <IconMenu className="w-6 h-6" />
+                <IconMenu className="w-5 h-5" />
               )}
             </button>
           )}
 
-          <Link to="/" className="flex items-center gap-3 group">
-            <CampusLogo className="w-9 h-9 text-blue-600 group-hover:scale-105 transition-transform" />
-            <div className="hidden sm:block">
-              <div className="flex items-center gap-1.5">
-                <span className="font-bold text-base tracking-tight text-slate-900 leading-none">
-                  CAMPUS LIVE
-                </span>
-              </div>
-              <span className="text-[11px] text-slate-400 font-medium tracking-normal block leading-tight mt-0.5">
+          <Link to="/" className="flex items-center gap-3 group shrink-0">
+            {/* Clean compact container for logo */}
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100/90 flex items-center justify-center text-blue-600 shadow-2xs group-hover:border-blue-200 group-hover:bg-blue-100/60 transition-all duration-150 shrink-0">
+              <CampusLogo className="w-6 h-6 text-blue-600 group-hover:scale-105 transition-transform" />
+            </div>
+
+            <div className="flex flex-col min-w-0">
+              <span className="font-bold text-sm sm:text-base tracking-tight text-slate-900 leading-none group-hover:text-blue-600 transition-colors">
+                CAMPUS LIVE
+              </span>
+              <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium tracking-normal block leading-tight mt-1 whitespace-nowrap hidden sm:block">
                 Discover. Participate. Connect.
               </span>
             </div>
           </Link>
+
+          {/* Section Divider between Branding and Center Search */}
+          <div className="hidden lg:block h-6 w-px bg-slate-200/80 ml-3 lg:ml-5 shrink-0" />
         </div>
 
-        {/* CENTER: Search Bar */}
-        <div className="flex-1 max-w-md mx-2 hidden md:block">
-          <SearchBar
-            value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
-            onClear={() => setSearchValue('')}
-            onKeyDown={handleSearchKeyDown}
-            size="sm"
-            placeholder="Search activities, clubs, events..."
-          />
+        {/* ============================================================== */}
+        {/* CENTER SECTION: Global Search Component                        */}
+        {/* ============================================================== */}
+        <div className="flex-1 flex items-center justify-center px-2 md:px-4 min-w-0">
+          <div className="w-full max-w-sm md:max-w-md lg:max-w-lg hidden sm:block">
+            <SearchBar
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+              onClear={() => setSearchValue('')}
+              onKeyDown={handleSearchKeyDown}
+              size="sm"
+              placeholder="Search activities, clubs, events..."
+              shortcut="⌘K"
+            />
+          </div>
         </div>
 
-        {/* RIGHT: Actions (Notifications, Help, Profile) */}
+        {/* ============================================================== */}
+        {/* RIGHT SECTION: Notifications & Profile (No Support/Help Icon)  */}
+        {/* ============================================================== */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* Section Divider between Search and Actions on Desktop */}
+          <div className="hidden lg:block h-6 w-px bg-slate-200/80 mr-1 shrink-0" />
+
+          {/* Mobile Search Button (Compact toggle on small screens) */}
+          <button
+            type="button"
+            onClick={() => setIsMobileSearchOpen((prev) => !prev)}
+            aria-label="Toggle search"
+            className={`sm:hidden p-2 rounded-xl transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              isMobileSearchOpen
+                ? 'bg-blue-50 text-blue-600 ring-1 ring-blue-200 shadow-2xs'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            <IconSearch className="w-5 h-5" />
+          </button>
+
           {/* 1. NOTIFICATION BELL & POPOVER */}
           <div className="relative" ref={notificationsRef}>
             <button
@@ -221,15 +273,15 @@ export default function Navbar({
               aria-haspopup="dialog"
               aria-expanded={isNotificationsOpen}
               title="Notifications"
-              className={`relative inline-flex items-center justify-center p-2 rounded-lg transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
+              className={`relative inline-flex items-center justify-center p-2 rounded-xl transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
                 isNotificationsOpen
-                  ? 'bg-blue-50 text-blue-600 ring-1 ring-blue-200'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                  ? 'bg-blue-50 text-blue-600 ring-1 ring-blue-200 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/90'
               }`}
             >
               <IconBell className="w-5 h-5" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-xs">
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-xs animate-in zoom-in-75">
                   {unreadCount}
                 </span>
               )}
@@ -240,7 +292,7 @@ export default function Navbar({
               <div
                 role="dialog"
                 aria-label="Recent notifications"
-                className="absolute right-0 mt-2 w-80 sm:w-96 max-w-[calc(100vw-2rem)] rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 focus:outline-none z-50 overflow-hidden"
+                className="absolute right-0 mt-2.5 w-80 sm:w-96 max-w-[calc(100vw-2rem)] rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 focus:outline-none z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100"
               >
                 {/* Popover Header */}
                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
@@ -248,98 +300,71 @@ export default function Navbar({
                     <span className="font-semibold text-sm text-slate-900">Notifications</span>
                     {unreadCount > 0 ? (
                       <span className="px-2 py-0.5 text-[11px] font-bold bg-blue-100 text-blue-700 rounded-full">
-                        {unreadCount} unread
+                        {unreadCount} new
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 text-[11px] font-medium bg-slate-200/70 text-slate-600 rounded-full">
-                        All read
-                      </span>
+                      <span className="text-xs text-slate-400">All caught up</span>
                     )}
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={handleMarkAllAsRead}
-                    disabled={unreadCount === 0}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed transition-colors"
-                  >
-                    Mark all as read
-                  </button>
+                  {unreadCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllAsRead}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline cursor-pointer"
+                    >
+                      Mark all as read
+                    </button>
+                  )}
                 </div>
 
-                {/* Popover Recent Items */}
+                {/* Popover Body List */}
                 <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
                   {notifications.length === 0 ? (
-                    <div className="py-8 text-center text-xs text-slate-500">
-                      No notifications available.
+                    <div className="p-8 text-center text-xs text-slate-400">
+                      No notifications right now
                     </div>
                   ) : (
-                    notifications.slice(0, 4).map((notif) => {
-                      const typeConfig = {
-                        activity: {
-                          icon: <IconActivity className="w-4 h-4 text-indigo-600" />,
-                          bg: 'bg-indigo-50 border-indigo-100',
-                        },
-                        success: {
-                          icon: <IconClipboardCheck className="w-4 h-4 text-emerald-600" />,
-                          bg: 'bg-emerald-50 border-emerald-100',
-                        },
-                        warning: {
-                          icon: <IconAlertCircle className="w-4 h-4 text-amber-600" />,
-                          bg: 'bg-amber-50 border-amber-100',
-                        },
-                        info: {
-                          icon: <IconBell className="w-4 h-4 text-blue-600" />,
-                          bg: 'bg-blue-50 border-blue-100',
-                        },
-                      }
-                      const config = typeConfig[notif.type] || typeConfig.info
-
-                      return (
-                        <button
-                          key={notif.id}
-                          type="button"
-                          onClick={() => handleNotificationClick(notif)}
-                          className={`w-full text-left p-3.5 flex items-start gap-3 transition-colors cursor-pointer border-l-4 ${
-                            notif.isUnread
-                              ? 'bg-blue-50/50 hover:bg-blue-50/80 border-l-blue-600'
-                              : 'hover:bg-slate-50 border-l-transparent'
-                          }`}
-                        >
-                          {/* Type Icon */}
-                          <div className={`p-2 rounded-xl shrink-0 border ${config.bg} shadow-2xs mt-0.5`}>
-                            {config.icon}
-                          </div>
-
-                          {/* Content */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-1.5">
-                              <p
-                                className={`text-xs truncate ${
-                                  notif.isUnread
-                                    ? 'font-bold text-slate-900'
-                                    : 'font-medium text-slate-700'
-                                }`}
-                              >
-                                {notif.title}
-                              </p>
-                              {notif.isUnread && (
-                                <span
-                                  className="w-2 h-2 rounded-full bg-blue-600 shrink-0 ml-1"
-                                  title="Unread"
-                                />
-                              )}
-                            </div>
-                            <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5 leading-snug">
-                              {notif.message}
-                            </p>
-                            <span className="text-[10px] text-slate-400 block mt-1 font-medium">
-                              {notif.time}
+                    notifications.slice(0, 5).map((notif) => (
+                      <div
+                        key={notif.id}
+                        onClick={() => handleNotificationClick(notif)}
+                        className={`p-3.5 hover:bg-slate-50/80 transition-colors cursor-pointer flex items-start gap-3 text-left ${
+                          notif.isUnread ? 'bg-blue-50/30' : ''
+                        }`}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0 mt-0.5 text-slate-600">
+                          {notif.type === 'activity' ? (
+                            <IconActivity className="w-4 h-4 text-blue-600" />
+                          ) : notif.type === 'registration' ? (
+                            <IconClipboardCheck className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <IconAlertCircle className="w-4 h-4 text-amber-600" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span
+                              className={`text-xs truncate ${
+                                notif.isUnread
+                                  ? 'font-bold text-slate-900'
+                                  : 'font-medium text-slate-700'
+                              }`}
+                            >
+                              {notif.title}
                             </span>
+                            {notif.isUnread && (
+                              <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+                            )}
                           </div>
-                        </button>
-                      )
-                    })
+                          <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5 leading-relaxed">
+                            {notif.message}
+                          </p>
+                          <span className="text-[10px] text-slate-400 mt-1 block font-medium">
+                            {notif.time}
+                          </span>
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
 
@@ -348,7 +373,7 @@ export default function Navbar({
                   type="button"
                   onClick={() => {
                     setIsNotificationsOpen(false)
-                    navigate('/student/notifications')
+                    navigate(notificationPath)
                   }}
                   className="w-full py-2.5 px-4 text-center text-xs font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50/50 transition-colors flex items-center justify-center gap-1.5 border-t border-slate-100 cursor-pointer bg-white"
                 >
@@ -359,20 +384,10 @@ export default function Navbar({
             )}
           </div>
 
-          {/* 2. HELP / SUPPORT ICON */}
-          <button
-            type="button"
-            onClick={handleHelpClick}
-            aria-label="Help and Support"
-            title="Help & Support"
-            className="relative inline-flex items-center justify-center p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors cursor-pointer hidden sm:inline-flex"
-          >
-            <IconHelp className="w-5 h-5" />
-          </button>
+          {/* Separator between Notification Bell and Profile */}
+          <div className="h-6 w-px bg-slate-200/80 hidden sm:block mx-1 shrink-0" />
 
-          <div className="h-6 w-px bg-slate-200 hidden sm:block mx-1" />
-
-          {/* 3. PROFILE AREA & DROPDOWN MENU */}
+          {/* 2. PROFILE AREA & DROPDOWN MENU */}
           <div className="relative" ref={profileRef}>
             <button
               type="button"
@@ -380,8 +395,10 @@ export default function Navbar({
               aria-label={`Open profile menu for ${user.name}`}
               aria-haspopup="menu"
               aria-expanded={isProfileOpen}
-              className={`flex items-center gap-2.5 sm:gap-3 p-1 sm:px-2 rounded-xl transition-colors cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
-                isProfileOpen ? 'bg-slate-100 ring-1 ring-slate-200' : 'hover:bg-slate-100/80'
+              className={`flex items-center gap-2.5 sm:gap-3 p-1 sm:px-2 rounded-xl transition-all cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
+                isProfileOpen
+                  ? 'bg-slate-100 ring-1 ring-slate-200'
+                  : 'hover:bg-slate-100/80'
               }`}
             >
               {/* Avatar */}
@@ -398,7 +415,7 @@ export default function Navbar({
                   <Badge
                     variant={roleBadgeVariants[user.role] || 'primary'}
                     size="sm"
-                    className="text-[10px] py-0 px-1.5"
+                    className="text-[10px] py-0 px-1.5 font-medium"
                   >
                     {user.role}
                   </Badge>
@@ -418,10 +435,10 @@ export default function Navbar({
               <div
                 role="menu"
                 aria-orientation="vertical"
-                className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 focus:outline-none py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
+                className="absolute right-0 mt-2.5 w-64 max-w-[calc(100vw-2rem)] rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 focus:outline-none py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
               >
                 {/* User Summary Header */}
-                <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
+                <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3 bg-slate-50/50">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-semibold text-sm flex items-center justify-center ring-2 ring-white shadow-2xs shrink-0">
                     {user.avatar || 'N'}
                   </div>
@@ -436,7 +453,7 @@ export default function Navbar({
                       <Badge
                         variant={roleBadgeVariants[user.role] || 'primary'}
                         size="sm"
-                        className="text-[10px] py-0 px-1.5"
+                        className="text-[10px] py-0 px-1.5 font-medium"
                       >
                         {user.role}
                       </Badge>
@@ -444,32 +461,24 @@ export default function Navbar({
                   </div>
                 </div>
 
-                {/* Navigation Items */}
+                {/* Navigation Items: My Profile, Account Settings, Notifications */}
                 <div className="py-1">
-                  {/* View Profile */}
+                  {/* My Profile */}
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() =>
-                      handleProfileNavigation(
-                        user.role === 'Student'
-                          ? '/student/profile'
-                          : user.role === 'Faculty'
-                          ? '/faculty/dashboard'
-                          : '/admin/dashboard'
-                      )
-                    }
+                    onClick={() => handleProfileNavigation(profilePath)}
                     className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer text-left"
                   >
                     <IconUser className="w-4 h-4 text-slate-400 shrink-0 pointer-events-none" />
-                    <span className="font-medium flex-1 pointer-events-none">View Profile</span>
+                    <span className="font-medium flex-1 pointer-events-none">My Profile</span>
                   </button>
 
                   {/* Account Settings */}
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => handleProfileNavigation('/student/settings')}
+                    onClick={() => handleProfileNavigation(settingsPath)}
                     className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer text-left"
                   >
                     <IconSettings className="w-4 h-4 text-slate-400 shrink-0 pointer-events-none" />
@@ -480,7 +489,7 @@ export default function Navbar({
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => handleProfileNavigation('/student/notifications')}
+                    onClick={() => handleProfileNavigation(notificationPath)}
                     className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer text-left"
                   >
                     <IconBell className="w-4 h-4 text-slate-400 shrink-0 pointer-events-none" />
@@ -490,17 +499,6 @@ export default function Navbar({
                         {unreadCount}
                       </span>
                     )}
-                  </button>
-
-                  {/* Support */}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => handleProfileNavigation('/student/support')}
-                    className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer text-left"
-                  >
-                    <IconHelp className="w-4 h-4 text-slate-400 shrink-0 pointer-events-none" />
-                    <span className="font-medium flex-1 pointer-events-none">Support</span>
                   </button>
                 </div>
 
@@ -523,7 +521,21 @@ export default function Navbar({
           </div>
         </div>
       </div>
+
+      {/* Mobile Search Expandable Bar (Below 72px Header on small screens) */}
+      {isMobileSearchOpen && (
+        <div className="sm:hidden px-4 py-2.5 bg-white border-t border-slate-200/80 shadow-md animate-in fade-in slide-in-from-top-2 duration-150">
+          <SearchBar
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            onClear={() => setSearchValue('')}
+            onKeyDown={handleSearchKeyDown}
+            size="sm"
+            autoFocus
+            placeholder="Search activities, clubs, events..."
+          />
+        </div>
+      )}
     </header>
   )
 }
-

@@ -4,7 +4,7 @@ import { facultyNav } from '../config/navigation'
 export default function FacultyLayout({ children }) {
   const facultyUser = {
     name: 'Prof. David Vance',
-    role: 'Faculty',
+    role: 'Admin',
     email: 'd.vance@campus.edu',
     avatar: 'DV',
   }

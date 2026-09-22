@@ -1,8 +1,11 @@
+import { useNavigate } from 'react-router-dom'
 import Badge from './Badge'
 import Button from './Button'
 import { IconCalendar, IconClock, IconMapPin, IconActivity } from '../icons/Icons'
 
 export default function ActivityCard({
+  id,
+  viewBasePath = '/student/activities',
   title,
   category = 'Campus Event',
   date,
@@ -20,6 +23,8 @@ export default function ActivityCard({
   badgeVariant = 'primary',
   className = '',
 }) {
+  const navigate = useNavigate()
+  const handleAction = onAction || (id ? () => navigate(`${viewBasePath}/${id}`) : undefined)
   return (
     <div
       className={`bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md hover:border-slate-300 transition-all flex flex-col justify-between group ${className}`}
@@ -101,7 +106,7 @@ export default function ActivityCard({
           variant="outline"
           size="sm"
           fullWidth
-          onClick={onAction}
+          onClick={handleAction}
           className="hover:border-blue-600 hover:text-blue-600 transition-colors"
         >
           {actionText}

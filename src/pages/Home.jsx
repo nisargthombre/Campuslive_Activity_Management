@@ -13,10 +13,10 @@ function Home() {
       borderHover: 'hover:border-blue-400',
     },
     {
-      title: 'Faculty Portal',
+      title: 'Admin Portal',
       description: 'Create activities, manage student attendance, track registrations, and guide student clubs.',
       path: '/faculty/dashboard',
-      badge: 'Faculty',
+      badge: 'Admin',
       badgeVariant: 'secondary',
       borderHover: 'hover:border-indigo-400',
     },

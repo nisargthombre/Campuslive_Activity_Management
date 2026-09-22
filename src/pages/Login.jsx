@@ -306,24 +306,33 @@ export default function Login() {
               Continue with Google
             </Button>
 
-            {/* Register Link */}
-            <div className="text-center pt-2 border-t border-slate-100">
+            {/* Register & Admin Entry Links */}
+            <div className="text-center pt-2 border-t border-slate-100 space-y-2">
               <p className="text-xs text-slate-500">
-                Don&apos;t have an account?{' '}
+                New student?{' '}
                 <Link
                   to="/register"
                   className="font-bold text-blue-600 hover:text-blue-700 hover:underline transition-colors"
                 >
-                  Create an account
+                  Create Student Account
                 </Link>
               </p>
+
+              <div className="pt-1">
+                <Link
+                  to="/admin/login"
+                  className="text-xs font-medium text-slate-500 hover:text-blue-600 hover:underline transition-colors"
+                >
+                  Staff / Admin Login
+                </Link>
+              </div>
             </div>
           </div>
 
           {/* Institutional Portal Notice */}
           <div className="text-center space-y-1">
             <p className="text-[11px] text-slate-400">
-              Students, Faculty, and Administrators access via institutional credentials.
+              Students and authorized staff access via institutional credentials.
             </p>
             <div className="flex items-center justify-center gap-4 text-[11px] text-slate-400">
               <Link to="/student/support" className="hover:text-slate-600 transition-colors">
