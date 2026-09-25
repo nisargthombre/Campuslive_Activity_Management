@@ -40,9 +40,9 @@ function Home() {
           </div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">CAMPUS LIVE</h1>
           <p className="text-slate-500 font-medium text-sm mt-1">Discover. Participate. Connect.</p>
-          <div className="mt-3">
-            <Badge variant="success" dot size="sm">
-              UI Foundation & Layouts Active
+          <div className="mt-3 flex items-center justify-center gap-2">
+            <Badge variant="neutral" size="sm">
+              Internal Testing & Dev Selector
             </Badge>
           </div>
         </div>

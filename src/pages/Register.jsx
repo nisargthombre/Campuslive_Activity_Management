@@ -545,8 +545,8 @@ export default function Register() {
               Need help? Reach out to your department coordinator or campus support.
             </p>
             <div className="flex items-center justify-center gap-4 text-[11px] text-slate-400">
-              <Link to="/student/support" className="hover:text-slate-600 transition-colors">
-                Student Support
+              <Link to="/help-support" className="hover:text-slate-600 transition-colors">
+                Help & Support
               </Link>
               <span>•</span>
               <Link to="/login" className="hover:text-slate-600 transition-colors">

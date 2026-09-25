@@ -1,180 +1,56 @@
-export const supportCategories = [
-  'Technical Issue',
-  'Account & Login',
-  'Activity / Registration',
-  'Club',
-  'Payment / Fees',
-  'Other',
-]
+/**
+ * Support Data Module (Bridged to Unified Support Architecture)
+ * Connects the Student Support portal to the single common support ticket system.
+ */
 
-export const supportPriorities = ['Low', 'Medium', 'High']
+import {
+  initialUnifiedTickets,
+  getStoredUnifiedTickets,
+  saveStoredUnifiedTickets,
+  UNIFIED_SUPPORT_EVENT_KEY,
+  supportCategoriesList,
+  supportPrioritiesList,
+  supportStatusesList,
+} from './unifiedSupportData.js'
 
-export const supportStatuses = ['All', 'Open', 'In Progress', 'Resolved', 'Closed']
+export const supportCategories = supportCategoriesList
+export const supportPriorities = supportPrioritiesList
+export const supportStatuses = supportStatusesList
 
-export const initialTickets = [
-  {
-    id: 'TICK-2026-0402',
-    ticketNumber: 'TICK-2026-0402',
-    subject: 'Unable to download Certificate of Participation for Ideathon',
-    category: 'Technical Issue',
-    priority: 'Medium',
-    status: 'Resolved',
-    createdDate: '19 Sep 2026, 02:40 PM',
-    lastUpdated: '21 Sep 2026, 10:15 AM',
-    description:
-      'I completed the Smart Campus Ideathon 2026 last week, but the download certificate link on my participation history is showing verification pending.',
-    attachmentName: 'ideathon-screen.png',
-    messages: [
-      {
-        id: 'msg-1',
-        senderName: 'You (Alex Rivera)',
-        role: 'Student',
-        avatar: 'AR',
-        text: 'I completed the Smart Campus Ideathon 2026 last week, but the download certificate link on my participation history is showing verification pending. Could you please look into it?',
-        timestamp: '19 Sep 2026, 02:40 PM',
-        isStaff: false,
-      },
-      {
-        id: 'msg-2',
-        senderName: 'Dr. Rajiv Sen',
-        role: 'Faculty Coordinator',
-        avatar: 'RS',
-        text: 'Hello Alex, thank you for reaching out. We have sent the attendance logs to the academic registrar for digital signature verification.',
-        timestamp: '20 Sep 2026, 11:30 AM',
-        isStaff: true,
-      },
-      {
-        id: 'msg-3',
-        senderName: 'Priya Sharma',
-        role: 'IT Helpdesk Lead',
-        avatar: 'PS',
-        text: 'Your digital credential has now been validated and issued. You can find it attached in your My Activity history records.',
-        timestamp: '21 Sep 2026, 10:15 AM',
-        isStaff: true,
-      },
-    ],
-  },
-  {
-    id: 'TICK-2026-0418',
-    ticketNumber: 'TICK-2026-0418',
-    subject: 'Schedule clash for Web Development Bootcamp with Lab Exam',
-    category: 'Activity / Registration',
-    priority: 'High',
-    status: 'In Progress',
-    createdDate: '20 Sep 2026, 04:30 PM',
-    lastUpdated: '21 Sep 2026, 09:20 AM',
-    description:
-      'The Web Development Bootcamp session on Friday afternoon clashes with our scheduled CS202 Lab Exam. Can I transfer to the morning weekend slot?',
-    attachmentName: null,
-    messages: [
-      {
-        id: 'msg-201',
-        senderName: 'You (Alex Rivera)',
-        role: 'Student',
-        avatar: 'AR',
-        text: 'The Web Development Bootcamp session on Friday afternoon clashes with our scheduled CS202 Lab Exam. Can I transfer to the morning weekend slot or get access to session recordings?',
-        timestamp: '20 Sep 2026, 04:30 PM',
-        isStaff: false,
-      },
-      {
-        id: 'msg-202',
-        senderName: 'Rahul Deshmukh',
-        role: 'Student Affairs Officer',
-        avatar: 'RD',
-        text: 'We are checking slot capacities with the event organizer. We will confirm your transfer request by this afternoon.',
-        timestamp: '21 Sep 2026, 09:20 AM',
-        isStaff: true,
-      },
-    ],
-  },
-  {
-    id: 'TICK-2026-0425',
-    ticketNumber: 'TICK-2026-0425',
-    subject: 'Coding Club weekly discord & repo link not received',
-    category: 'Club',
-    priority: 'Low',
-    status: 'Open',
-    createdDate: '21 Sep 2026, 09:00 AM',
-    lastUpdated: '21 Sep 2026, 09:00 AM',
-    description:
-      'My membership for Coding Club was approved this morning, but I have not received the GitHub organization invite and private community channel link.',
-    attachmentName: null,
-    messages: [
-      {
-        id: 'msg-301',
-        senderName: 'You (Alex Rivera)',
-        role: 'Student',
-        avatar: 'AR',
-        text: 'My membership for Coding Club was approved this morning, but I have not received the GitHub organization invite and private community channel link. Could someone please share them?',
-        timestamp: '21 Sep 2026, 09:00 AM',
-        isStaff: false,
-      },
-    ],
-  },
-  {
-    id: 'TICK-2026-0391',
-    ticketNumber: 'TICK-2026-0391',
-    subject: 'Two-factor authenticator reset for university portal email',
-    category: 'Account & Login',
-    priority: 'Medium',
-    status: 'Assigned',
-    createdDate: '18 Sep 2026, 11:15 AM',
-    lastUpdated: '19 Sep 2026, 01:20 PM',
-    description:
-      'I switched to a new phone and lost my authenticator app seeds for single sign-on access to the portal.',
-    attachmentName: null,
-    messages: [
-      {
-        id: 'msg-401',
-        senderName: 'You (Alex Rivera)',
-        role: 'Student',
-        avatar: 'AR',
-        text: 'I switched to a new phone and lost my authenticator app seeds for single sign-on access to the portal. Please initiate an identity reset.',
-        timestamp: '18 Sep 2026, 11:15 AM',
-        isStaff: false,
-      },
-      {
-        id: 'msg-402',
-        senderName: 'Campus IT Security',
-        role: 'SysAdmin',
-        avatar: 'IT',
-        text: 'Ticket assigned to Security Operations. A recovery SMS verification link has been queued for your registered contact phone.',
-        timestamp: '19 Sep 2026, 01:20 PM',
-        isStaff: true,
-      },
-    ],
-  },
-  {
-    id: 'TICK-2026-0365',
-    ticketNumber: 'TICK-2026-0365',
-    subject: 'Workshop kit receipt acknowledgment & GST invoice',
-    category: 'Payment / Fees',
-    priority: 'Low',
-    status: 'Closed',
-    createdDate: '12 Sep 2026, 10:00 AM',
-    lastUpdated: '13 Sep 2026, 03:45 PM',
-    description:
-      'Needed an official college stamp receipt for robotics kit purchase for external scholarship reimbursement.',
-    attachmentName: 'receipt-copy.pdf',
-    messages: [
-      {
-        id: 'msg-501',
-        senderName: 'You (Alex Rivera)',
-        role: 'Student',
-        avatar: 'AR',
-        text: 'I need an official stamped payment receipt for the robotics kit for my state scholarship claim.',
-        timestamp: '12 Sep 2026, 10:00 AM',
-        isStaff: false,
-      },
-      {
-        id: 'msg-502',
-        senderName: 'Accounts Department',
-        role: 'Finance Officer',
-        avatar: 'AD',
-        text: 'Stamped receipt has been issued and sent to your student email. Closing this ticket.',
-        timestamp: '13 Sep 2026, 03:45 PM',
-        isStaff: true,
-      },
-    ],
-  },
-]
+// Student initial tickets are the student-origin subset of the unified store
+export const initialTickets = initialUnifiedTickets.filter((t) => t.origin === 'student')
+
+export const SUPPORT_EVENT_KEY = UNIFIED_SUPPORT_EVENT_KEY
+
+/**
+ * Get student tickets from unified store
+ */
+export function getStoredSupportTickets() {
+  const allTickets = getStoredUnifiedTickets()
+  return allTickets.filter((t) => t.origin === 'student')
+}
+
+/**
+ * Save student tickets to unified store while preserving faculty and public tickets
+ */
+export function saveStoredSupportTickets(studentTickets) {
+  const allTickets = getStoredUnifiedTickets()
+  const studentMap = new Map(studentTickets.map((t) => [t.id, t]))
+
+  // Update existing tickets
+  const merged = allTickets.map((t) => {
+    if (studentMap.has(t.id)) {
+      return { ...studentMap.get(t.id), origin: 'student' }
+    }
+    return t
+  })
+
+  // Add any brand new student tickets that weren't in allTickets yet
+  studentTickets.forEach((st) => {
+    if (!allTickets.some((t) => t.id === st.id)) {
+      merged.unshift({ ...st, origin: 'student' })
+    }
+  })
+
+  saveStoredUnifiedTickets(merged)
+}

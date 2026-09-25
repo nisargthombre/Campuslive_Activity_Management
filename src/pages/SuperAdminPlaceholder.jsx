@@ -43,6 +43,12 @@ const routeMeta = {
     breadcrumb: 'Activities',
     icon: <IconCalendar className="w-6 h-6 text-amber-600" />,
   },
+  '/admin/activities/create': {
+    title: 'Create Campus Activity',
+    subtitle: 'Institutional event creation with system-wide publishing, multi-department eligibility, and capacity controls.',
+    breadcrumb: 'Create Activity',
+    icon: <IconCalendar className="w-6 h-6 text-blue-600" />,
+  },
   '/admin/clubs': {
     title: 'Clubs & Societies',
     subtitle: 'Supervise registered student chapters, society advisors, and institutional funding charters.',

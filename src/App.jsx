@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Register from './pages/Register'
@@ -32,6 +32,21 @@ import AdminDashboard from './pages/AdminDashboard'
 import AdminRegister from './pages/AdminRegister'
 import AdminLogin from './pages/AdminLogin'
 import AdminForgotPassword from './pages/AdminForgotPassword'
+import SuperAdminLogin from './pages/SuperAdminLogin'
+import SuperAdminForgotPassword from './pages/SuperAdminForgotPassword'
+import SuperAdminUsers from './pages/SuperAdminUsers'
+import SuperAdminStudents from './pages/SuperAdminStudents'
+import SuperAdminStaff from './pages/SuperAdminStaff'
+import SuperAdminActivities from './pages/SuperAdminActivities'
+import SuperAdminCreateActivity from './pages/SuperAdminCreateActivity'
+import SuperAdminClubs from './pages/SuperAdminClubs'
+import SuperAdminRegistrations from './pages/SuperAdminRegistrations'
+import SuperAdminAnalytics from './pages/SuperAdminAnalytics'
+import SuperAdminReports from './pages/SuperAdminReports'
+import SuperAdminNotifications from './pages/SuperAdminNotifications'
+import SuperAdminSupport from './pages/SuperAdminSupport'
+import SuperAdminSettings from './pages/SuperAdminSettings'
+import HelpSupport from './pages/HelpSupport'
 
 import SuperAdminPlaceholder from './pages/SuperAdminPlaceholder'
 
@@ -39,8 +54,11 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/help-support" element={<HelpSupport />} />
+        <Route path="/super-admin/login" element={<SuperAdminLogin />} />
+        <Route path="/super-admin/forgot-password" element={<SuperAdminForgotPassword />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/faculty/login" element={<AdminLogin />} />
         <Route path="/register" element={<Register />} />
@@ -80,19 +98,36 @@ function App() {
         <Route path="/faculty/settings" element={<FacultyPlaceholder />} />
         <Route path="/admin/dashboard" element={<AdminDashboard />} />
         <Route path="/super-admin/dashboard" element={<AdminDashboard />} />
-        <Route path="/admin/users" element={<SuperAdminPlaceholder />} />
-        <Route path="/admin/students" element={<SuperAdminPlaceholder />} />
-        <Route path="/admin/staff" element={<SuperAdminPlaceholder />} />
-        <Route path="/admin/activities" element={<SuperAdminPlaceholder />} />
-        <Route path="/admin/clubs" element={<SuperAdminPlaceholder />} />
-        <Route path="/admin/registrations" element={<SuperAdminPlaceholder />} />
-        <Route path="/admin/analytics" element={<SuperAdminPlaceholder />} />
-        <Route path="/admin/reports" element={<SuperAdminPlaceholder />} />
-        <Route path="/admin/notifications" element={<SuperAdminPlaceholder />} />
-        <Route path="/admin/support" element={<SuperAdminPlaceholder />} />
-        <Route path="/admin/settings" element={<SuperAdminPlaceholder />} />
+        <Route path="/admin/users" element={<SuperAdminUsers />} />
+        <Route path="/super-admin/users" element={<SuperAdminUsers />} />
+        <Route path="/admin/students" element={<SuperAdminStudents />} />
+        <Route path="/super-admin/students" element={<SuperAdminStudents />} />
+        <Route path="/admin/staff" element={<SuperAdminStaff />} />
+        <Route path="/super-admin/staff" element={<SuperAdminStaff />} />
+        <Route path="/admin/faculty" element={<SuperAdminStaff />} />
+        <Route path="/super-admin/faculty" element={<SuperAdminStaff />} />
+        <Route path="/admin/activities" element={<SuperAdminActivities />} />
+        <Route path="/super-admin/activities" element={<SuperAdminActivities />} />
+        <Route path="/admin/activities/create" element={<SuperAdminCreateActivity />} />
+        <Route path="/super-admin/activities/create" element={<SuperAdminCreateActivity />} />
+        <Route path="/admin/clubs" element={<SuperAdminClubs />} />
+        <Route path="/super-admin/clubs" element={<SuperAdminClubs />} />
+        <Route path="/admin/registrations" element={<SuperAdminRegistrations />} />
+        <Route path="/super-admin/registrations" element={<SuperAdminRegistrations />} />
+        <Route path="/admin/analytics" element={<SuperAdminAnalytics />} />
+        <Route path="/super-admin/analytics" element={<SuperAdminAnalytics />} />
+        <Route path="/admin/reports" element={<SuperAdminReports />} />
+        <Route path="/super-admin/reports" element={<SuperAdminReports />} />
+        <Route path="/admin/notifications" element={<SuperAdminNotifications />} />
+        <Route path="/super-admin/notifications" element={<SuperAdminNotifications />} />
+        <Route path="/admin/support" element={<SuperAdminSupport />} />
+        <Route path="/super-admin/support" element={<SuperAdminSupport />} />
+        <Route path="/admin/settings" element={<SuperAdminSettings />} />
+        <Route path="/super-admin/settings" element={<SuperAdminSettings />} />
         <Route path="/admin/profile" element={<SuperAdminPlaceholder />} />
-        <Route path="*" element={<Home />} />
+        <Route path="/dev-portals" element={<Home />} />
+        <Route path="/dev/portals" element={<Home />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )

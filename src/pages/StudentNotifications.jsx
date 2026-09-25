@@ -16,20 +16,21 @@ import {
   notificationCategories,
   getStoredNotifications,
   saveStoredNotifications,
+  getNotificationsForRole,
   NOTIFICATIONS_EVENT_KEY,
 } from '../data/notificationsData'
 
 export default function StudentNotifications() {
   const navigate = useNavigate()
 
-  // Notifications state synced with header/storage
-  const [notifications, setNotifications] = useState(getStoredNotifications)
+  // Notifications state strictly filtered for Student role (never internal_admin)
+  const [notifications, setNotifications] = useState(() => getNotificationsForRole('Student'))
   const [activeFilter, setActiveFilter] = useState('All')
   const [toast, setToast] = useState(null)
 
   useEffect(() => {
     const handleSync = () => {
-      setNotifications(getStoredNotifications())
+      setNotifications(getNotificationsForRole('Student'))
     }
     window.addEventListener(NOTIFICATIONS_EVENT_KEY, handleSync)
     window.addEventListener('storage', handleSync)
@@ -82,21 +83,20 @@ export default function StudentNotifications() {
 
   // Mark a single notification as read/unread
   const handleToggleRead = (id) => {
-    setNotifications((prev) => {
-      const updated = prev.map((n) => {
-        if (n.id === id) {
-          const nextState = !n.isUnread
-          showToast(
-            nextState ? 'Marked as unread.' : 'Notification marked as read.',
-            'info'
-          )
-          return { ...n, isUnread: nextState }
-        }
-        return n
-      })
-      saveStoredNotifications(updated)
-      return updated
+    const all = getStoredNotifications()
+    const updated = all.map((n) => {
+      if (n.id === id) {
+        const nextState = !n.isUnread
+        showToast(
+          nextState ? 'Marked as unread.' : 'Notification marked as read.',
+          'info'
+        )
+        return { ...n, isUnread: nextState }
+      }
+      return n
     })
+    saveStoredNotifications(updated)
+    setNotifications(getNotificationsForRole('Student'))
   }
 
   // Mark all as read
@@ -105,9 +105,11 @@ export default function StudentNotifications() {
       showToast('All notifications are already marked as read.', 'info')
       return
     }
-    const updated = notifications.map((n) => ({ ...n, isUnread: false }))
-    setNotifications(updated)
+    const all = getStoredNotifications()
+    const currentIds = new Set(notifications.map((n) => n.id))
+    const updated = all.map((n) => (currentIds.has(n.id) ? { ...n, isUnread: false } : n))
     saveStoredNotifications(updated)
+    setNotifications(getNotificationsForRole('Student'))
     showToast(`Marked ${unreadCount} notification${unreadCount > 1 ? 's' : ''} as read.`, 'success')
   }
 

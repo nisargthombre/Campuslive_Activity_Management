@@ -293,10 +293,10 @@ export default function AdminLogin() {
           <div className="text-center space-y-1">
             <div className="flex items-center justify-center gap-3 text-[11px] text-slate-400">
               <Link
-                to="/faculty/support"
+                to="/help-support"
                 className="hover:text-slate-600 transition-colors"
               >
-                Admin Support
+                Help & Support
               </Link>
               <span>•</span>
               <Link

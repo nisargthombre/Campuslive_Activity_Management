@@ -20,6 +20,7 @@ import Badge from '../common/Badge'
 import {
   getStoredNotifications,
   saveStoredNotifications,
+  getNotificationsForRole,
   NOTIFICATIONS_EVENT_KEY,
 } from '../../data/notificationsData'
 
@@ -37,7 +38,7 @@ export default function Navbar({
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false)
-  const [notifications, setNotifications] = useState(getStoredNotifications)
+  const [notifications, setNotifications] = useState(() => getNotificationsForRole(user?.role || 'Student'))
 
   const notificationsRef = useRef(null)
   const profileRef = useRef(null)
@@ -46,7 +47,7 @@ export default function Navbar({
   // Keep notifications in sync with other components and tabs
   useEffect(() => {
     const handleNotificationsUpdate = () => {
-      setNotifications(getStoredNotifications())
+      setNotifications(getNotificationsForRole(user?.role || 'Student'))
     }
     window.addEventListener(NOTIFICATIONS_EVENT_KEY, handleNotificationsUpdate)
     window.addEventListener('storage', handleNotificationsUpdate)
@@ -54,7 +55,7 @@ export default function Navbar({
       window.removeEventListener(NOTIFICATIONS_EVENT_KEY, handleNotificationsUpdate)
       window.removeEventListener('storage', handleNotificationsUpdate)
     }
-  }, [])
+  }, [user?.role])
 
   // Close dropdowns when clicking outside or pressing Escape
   useEffect(() => {
@@ -137,18 +138,19 @@ export default function Navbar({
   // Mark all notifications as read
   const handleMarkAllAsRead = (e) => {
     e.stopPropagation()
-    const updated = notifications.map((n) => ({ ...n, isUnread: false }))
-    setNotifications(updated)
+    const all = getStoredNotifications()
+    const currentIds = new Set(notifications.map((n) => n.id))
+    const updated = all.map((n) => (currentIds.has(n.id) ? { ...n, isUnread: false } : n))
     saveStoredNotifications(updated)
+    setNotifications(getNotificationsForRole(user?.role || 'Student'))
   }
 
   // Click single notification item
   const handleNotificationClick = (notif) => {
-    const updated = notifications.map((n) =>
-      n.id === notif.id ? { ...n, isUnread: false } : n
-    )
-    setNotifications(updated)
+    const all = getStoredNotifications()
+    const updated = all.map((n) => (n.id === notif.id ? { ...n, isUnread: false } : n))
     saveStoredNotifications(updated)
+    setNotifications(getNotificationsForRole(user?.role || 'Student'))
     setIsNotificationsOpen(false)
     navigate(notificationPath)
   }
@@ -342,6 +344,11 @@ export default function Navbar({
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
+                          {notif.channel === 'internal_admin' && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 uppercase tracking-wider mb-1">
+                              Internal Admin Notice
+                            </span>
+                          )}
                           <div className="flex items-center justify-between gap-1">
                             <span
                               className={`text-xs truncate ${

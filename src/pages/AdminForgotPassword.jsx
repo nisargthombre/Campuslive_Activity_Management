@@ -277,10 +277,10 @@ export default function AdminForgotPassword() {
             </p>
             <div className="flex items-center justify-center gap-3 text-xs">
               <Link
-                to="/faculty/support"
+                to="/help-support"
                 className="font-medium text-slate-600 hover:text-blue-600 transition-colors hover:underline"
               >
-                Admin Support Desk
+                Help & Support Desk
               </Link>
               <span className="text-slate-300">•</span>
               <Link

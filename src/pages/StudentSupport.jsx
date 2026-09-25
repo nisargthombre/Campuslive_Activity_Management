@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import StudentLayout from '../layouts/StudentLayout'
 import PageHeader from '../components/common/PageHeader'
 import StatCard from '../components/common/StatCard'
@@ -24,13 +24,34 @@ import {
   supportPriorities,
   supportStatuses,
   initialTickets,
+  getStoredSupportTickets,
+  saveStoredSupportTickets,
+  SUPPORT_EVENT_KEY,
 } from '../data/supportData'
 
 export default function StudentSupport() {
-  // Tickets state
-  const [tickets, setTickets] = useState(initialTickets)
+  // Tickets state connected to unified support store
+  const [tickets, setTickets] = useState(() => getStoredSupportTickets())
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
+
+  // Listen for Super Admin / Faculty updates in real-time
+  useEffect(() => {
+    const handleSync = () => {
+      const fresh = getStoredSupportTickets()
+      setTickets(fresh)
+      setSelectedTicket((prev) => {
+        if (!prev) return null
+        return fresh.find((t) => t.id === prev.id) || prev
+      })
+    }
+    window.addEventListener(SUPPORT_EVENT_KEY, handleSync)
+    window.addEventListener('storage', handleSync)
+    return () => {
+      window.removeEventListener(SUPPORT_EVENT_KEY, handleSync)
+      window.removeEventListener('storage', handleSync)
+    }
+  }, [])
 
   // Modals state
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -153,6 +174,7 @@ export default function StudentSupport() {
     const newTicket = {
       id: newTicketId,
       ticketNumber: newTicketId,
+      origin: 'student',
       subject: newTicketSubject.trim(),
       category: newTicketCategory,
       priority: newTicketPriority,
@@ -161,20 +183,32 @@ export default function StudentSupport() {
       lastUpdated: dateString,
       description: newTicketDescription.trim(),
       attachmentName: newTicketAttachment.trim() || null,
+      creator: {
+        name: 'Alex Rivera',
+        role: 'Student',
+        email: 'alex.rivera@campus.edu',
+        department: 'Computer Science',
+        studentId: 'STU-2024-001',
+      },
       messages: [
         {
           id: `msg-${Date.now()}`,
           senderName: 'You (Alex Rivera)',
+          senderRole: 'Student',
           role: 'Student',
           avatar: 'AR',
           text: newTicketDescription.trim(),
+          message: newTicketDescription.trim(),
           timestamp: dateString,
+          time: dateString,
           isStaff: false,
         },
       ],
     }
 
-    setTickets((prev) => [newTicket, ...prev])
+    const updated = [newTicket, ...tickets]
+    setTickets(updated)
+    saveStoredSupportTickets(updated)
     setIsCreateOpen(false)
 
     // Reset form fields
@@ -202,10 +236,13 @@ export default function StudentSupport() {
     const newMsg = {
       id: `msg-${Date.now()}`,
       senderName: 'You (Alex Rivera)',
+      senderRole: 'Student',
       role: 'Student',
       avatar: 'AR',
       text: replyText.trim(),
+      message: replyText.trim(),
       timestamp,
+      time: timestamp,
       isStaff: false,
     }
 
@@ -214,17 +251,18 @@ export default function StudentSupport() {
         return {
           ...t,
           lastUpdated: timestamp,
-          messages: [...t.messages, newMsg],
+          messages: [...(t.messages || []), newMsg],
         }
       }
       return t
     })
 
     setTickets(updatedTickets)
+    saveStoredSupportTickets(updatedTickets)
     setSelectedTicket((prev) => ({
       ...prev,
       lastUpdated: timestamp,
-      messages: [...prev.messages, newMsg],
+      messages: [...(prev.messages || []), newMsg],
     }))
 
     setReplyText('')

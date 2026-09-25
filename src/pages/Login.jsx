@@ -335,7 +335,7 @@ export default function Login() {
               Students and authorized staff access via institutional credentials.
             </p>
             <div className="flex items-center justify-center gap-4 text-[11px] text-slate-400">
-              <Link to="/student/support" className="hover:text-slate-600 transition-colors">
+              <Link to="/help-support" className="hover:text-slate-600 transition-colors">
                 Help & Support
               </Link>
               <span>•</span>

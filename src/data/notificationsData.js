@@ -1,3 +1,10 @@
+/**
+ * Campus Live Notifications Data & Unified Storage Infrastructure
+ * Supports two distinct notification channels:
+ * 1. Normal Notifications (Audience: Students OR Admin/Faculty)
+ * 2. Internal Admin Panel Notifications (Audience: Admin/Faculty ONLY, Students never receive or see)
+ */
+
 export const notificationCategories = [
   'All',
   'Unread',
@@ -5,10 +12,194 @@ export const notificationCategories = [
   'Registrations',
   'Clubs',
   'System',
+  'Internal Admin',
 ]
 
 export const NOTIFICATIONS_STORAGE_KEY = 'campuslive_notifications'
 export const NOTIFICATIONS_EVENT_KEY = 'campuslive_notifications_updated'
+
+export const initialNotifications = [
+  // 1. Normal Student Notifications
+  {
+    id: 'notif-1',
+    channel: 'normal',
+    recipientRole: 'student',
+    targetAudience: 'All Students',
+    title: 'New Activity Published: Smart Campus 24-Hour Hackathon',
+    message: 'Department of Computer Science has announced the Smart Campus Hackathon 2026. Registrations are now open for student teams across all years.',
+    time: '10 minutes ago',
+    date: '25 Sep 2026, 11:20 AM',
+    category: 'Activities',
+    type: 'activity',
+    priority: 'Normal',
+    isUnread: true,
+    sender: 'Department of Computer Engineering',
+    action: {
+      label: 'View Activity',
+      to: '/student/activities',
+    },
+  },
+  {
+    id: 'notif-2',
+    channel: 'normal',
+    recipientRole: 'student',
+    targetAudience: 'Individual Student (Nisarg Patel)',
+    title: 'Registration Confirmed: Web Development Bootcamp',
+    message: 'Your seat has been confirmed for the Web Development Bootcamp (React & Tailwind). Your official registration code is REG-2026-0891.',
+    time: '1 hour ago',
+    date: '25 Sep 2026, 10:30 AM',
+    category: 'Registrations',
+    type: 'success',
+    priority: 'Normal',
+    isUnread: true,
+    sender: 'Faculty Coordinator (Prof. David Vance)',
+    action: {
+      label: 'View Registration',
+      to: '/student/my-registrations',
+    },
+  },
+  {
+    id: 'notif-3',
+    channel: 'normal',
+    recipientRole: 'student',
+    targetAudience: 'Individual Student (Priya Sharma)',
+    title: 'Club Membership Approved: Coding Club',
+    message: 'Congratulations! Your application to join the Coding Club has been approved by Faculty Coordinator Dr. Sarah Jenkins. Welcome aboard!',
+    time: '3 hours ago',
+    date: '25 Sep 2026, 08:45 AM',
+    category: 'Clubs',
+    type: 'success',
+    priority: 'Normal',
+    isUnread: true,
+    sender: 'Coding Club Committee',
+    action: {
+      label: 'View Club',
+      to: '/student/clubs',
+    },
+  },
+  {
+    id: 'notif-4',
+    channel: 'normal',
+    recipientRole: 'student',
+    targetAudience: 'Computer Engineering (3rd Year)',
+    title: 'Schedule Changed: AI & Cloud Computing Workshop',
+    message: 'The AI & Cloud Computing Workshop has been rescheduled to Friday, 28 September at 2:00 PM in Central Auditorium. Please verify your calendar.',
+    time: 'Yesterday, 4:15 PM',
+    date: '24 Sep 2026, 04:15 PM',
+    category: 'Activities',
+    type: 'warning',
+    priority: 'Important',
+    isUnread: false,
+    sender: 'Dr. Sarah Jenkins',
+    action: {
+      label: 'Check Activity',
+      to: '/student/activities',
+    },
+  },
+  {
+    id: 'notif-5',
+    channel: 'normal',
+    recipientRole: 'student',
+    targetAudience: 'All Students',
+    title: 'Campus Advisory: Library & Tech Annex Extended Hours',
+    message: 'In preparation for mid-term assessments, central library reading halls and digital innovation labs will remain open until 11:00 PM on weekdays.',
+    time: 'Yesterday, 11:00 AM',
+    date: '24 Sep 2026, 11:00 AM',
+    category: 'System',
+    type: 'info',
+    priority: 'Normal',
+    isUnread: false,
+    sender: 'University Academic Registrar',
+    action: null,
+  },
+
+  // 2. Normal Admin / Faculty Notifications
+  {
+    id: 'notif-f1',
+    channel: 'normal',
+    recipientRole: 'faculty',
+    targetAudience: 'All Admin/Faculty',
+    title: 'New Student Registrations Queued for Approval',
+    message: 'A total of 42 student registrations have been submitted for upcoming October campus activities and require coordinator sign-off.',
+    time: '2 hours ago',
+    date: '25 Sep 2026, 09:30 AM',
+    category: 'Registrations',
+    type: 'info',
+    priority: 'Normal',
+    isUnread: true,
+    sender: 'Campus Live System',
+    action: {
+      label: 'Review Registrations',
+      to: '/faculty/registrations',
+    },
+  },
+
+  // 3. Internal Admin Panel Notifications (Admin/Faculty ONLY - Students never receive or see)
+  {
+    id: 'notif-adm-1',
+    channel: 'internal_admin',
+    recipientRole: 'faculty',
+    targetAudience: 'All Admin/Faculty',
+    title: 'System Maintenance Notice: Cloud Database Upgrades',
+    message: 'Central IT Infrastructure will execute PostgreSQL database clustering on Sunday, 28 Sep from 01:00 AM to 03:30 AM IST. Admin panel write operations will be temporarily paused.',
+    time: '3 hours ago',
+    date: '25 Sep 2026, 08:00 AM',
+    category: 'System Maintenance Notice',
+    type: 'warning',
+    priority: 'Important',
+    isUnread: true,
+    sender: 'Super Admin Office',
+    action: null,
+  },
+  {
+    id: 'notif-adm-2',
+    channel: 'internal_admin',
+    recipientRole: 'faculty',
+    targetAudience: 'Department (Computer Engineering & IT)',
+    title: 'Internal Administrative Announcement: Mid-Term Accreditation Review',
+    message: 'All department activity coordinators must verify student attendance rosters and certify event completion reports by 30 September for NAAC accreditation records.',
+    time: 'Yesterday, 02:30 PM',
+    date: '24 Sep 2026, 02:30 PM',
+    category: 'Internal Administrative Announcement',
+    type: 'danger',
+    priority: 'Urgent',
+    isUnread: true,
+    sender: 'Super Admin Council',
+    action: null,
+  },
+  {
+    id: 'notif-adm-3',
+    channel: 'internal_admin',
+    recipientRole: 'faculty',
+    targetAudience: 'Individual Admin/Faculty (Dr. Sarah Jenkins)',
+    title: 'Admin Meeting Reminder: Campus Fest Scheduling Council',
+    message: 'The institutional fest scheduling council will convene on Tuesday at 03:00 PM in Conference Room B to finalize auditorium booking allocations.',
+    time: '2 days ago',
+    date: '23 Sep 2026, 11:15 AM',
+    category: 'Admin Meeting Reminder',
+    type: 'info',
+    priority: 'Normal',
+    isUnread: false,
+    sender: 'Super Admin Secretariat',
+    action: null,
+  },
+  {
+    id: 'notif-adm-4',
+    channel: 'internal_admin',
+    recipientRole: 'faculty',
+    targetAudience: 'All Admin/Faculty',
+    title: 'Platform Management Notice: Updated Activity Cancellation Policy',
+    message: 'Please review the updated institutional regulation regarding activity cancellations: Available Seats must automatically recalculate as Maximum Capacity minus Valid Active Registrations.',
+    time: '3 days ago',
+    date: '22 Sep 2026, 04:00 PM',
+    category: 'Platform Management Notice',
+    type: 'warning',
+    priority: 'Important',
+    isUnread: false,
+    sender: 'Super Admin Office',
+    action: null,
+  },
+]
 
 export function getStoredNotifications() {
   try {
@@ -29,114 +220,31 @@ export function saveStoredNotifications(notifications) {
   }
 }
 
-export const initialNotifications = [
-  {
-    id: 'notif-1',
-    title: 'New Activity Published: Smart Campus 24-Hour Hackathon',
-    message: 'Department of Computer Science has announced the Smart Campus Hackathon 2026. Registrations are now open for student teams across all years.',
-    time: '10 minutes ago',
-    date: '21 Sep 2026, 11:20 AM',
-    category: 'Activities',
-    type: 'activity',
-    isUnread: true,
-    action: {
-      label: 'View Activity',
-      to: '/student/activities',
-    },
-  },
-  {
-    id: 'notif-2',
-    title: 'Registration Confirmed: Web Development Bootcamp',
-    message: 'Your seat has been confirmed for the Web Development Bootcamp (React & Tailwind). Your official registration code is REG-2026-0891.',
-    time: '1 hour ago',
-    date: '21 Sep 2026, 10:30 AM',
-    category: 'Registrations',
-    type: 'success',
-    isUnread: true,
-    action: {
-      label: 'View Registration',
-      to: '/student/my-registrations',
-    },
-  },
-  {
-    id: 'notif-3',
-    title: 'Club Membership Approved: Coding Club',
-    message: 'Congratulations! Your application to join the Coding Club has been approved by Faculty Coordinator Dr. Rajiv Sen. Welcome aboard!',
-    time: '3 hours ago',
-    date: '21 Sep 2026, 08:45 AM',
-    category: 'Clubs',
-    type: 'success',
-    isUnread: true,
-    action: {
-      label: 'View Club',
-      to: '/student/clubs/coding-club',
-    },
-  },
-  {
-    id: 'notif-4',
-    title: 'Schedule Changed: AI & Future Technology Workshop',
-    message: 'The AI & Future Technology Workshop has been rescheduled to Friday, 25 September at 2:00 PM in Central Auditorium. Please verify your calendar.',
-    time: 'Yesterday, 4:15 PM',
-    date: '20 Sep 2026, 04:15 PM',
-    category: 'Activities',
-    type: 'warning',
-    isUnread: false,
-    action: {
-      label: 'Check Activity',
-      to: '/student/activities',
-    },
-  },
-  {
-    id: 'notif-5',
-    title: 'Campus Advisory: Library & Tech Annex Extended Hours',
-    message: 'In preparation for mid-term assessments, central library reading halls and digital innovation labs will remain open until 11:00 PM on weekdays.',
-    time: 'Yesterday, 11:00 AM',
-    date: '20 Sep 2026, 11:00 AM',
-    category: 'System',
-    type: 'info',
-    isUnread: false,
-    action: null,
-  },
-  {
-    id: 'notif-6',
-    title: 'Registration Cancelled: Algorithmic Problem Solving',
-    message: 'Your registration for the Algorithmic Problem Solving Sprint has been successfully cancelled as requested. Seat released to waitlisted students.',
-    time: '2 days ago',
-    date: '19 Sep 2026, 02:30 PM',
-    category: 'Registrations',
-    type: 'warning',
-    isUnread: false,
-    action: {
-      label: 'View Registrations',
-      to: '/student/my-registrations',
-    },
-  },
-  {
-    id: 'notif-7',
-    title: 'Activity Notice: Drone Flying Masterclass Cancelled',
-    message: 'Due to severe monsoon forecast and high crosswinds, the outdoor drone session scheduled for this weekend has been cancelled. Rescheduled dates will follow.',
-    time: '3 days ago',
-    date: '18 Sep 2026, 09:15 AM',
-    category: 'Activities',
-    type: 'warning',
-    isUnread: false,
-    action: {
-      label: 'Explore Activities',
-      to: '/student/activities',
-    },
-  },
-  {
-    id: 'notif-8',
-    title: 'Support Ticket #402 Updated: Certificate Verification',
-    message: 'Academic Administration has processed and verified your participation attendance for the Smart Campus Ideathon 2026.',
-    time: '4 days ago',
-    date: '17 Sep 2026, 03:00 PM',
-    category: 'System',
-    type: 'success',
-    isUnread: false,
-    action: {
-      label: 'View My Activity',
-      to: '/student/my-activity',
-    },
-  },
-]
+/**
+ * Filter notifications for specific logged-in user role
+ * - Student: normal student notifications ONLY (never internal_admin)
+ * - Admin / Faculty: normal faculty notifications + internal_admin notifications
+ * - Super Admin: all notifications
+ */
+export function getNotificationsForRole(role = 'Student') {
+  const allNotifs = getStoredNotifications()
+
+  if (role === 'Student') {
+    // Strictly normal channel and intended for student
+    return allNotifs.filter(
+      (n) => n.channel === 'normal' && (n.recipientRole === 'student' || n.recipientRole === 'all')
+    )
+  }
+
+  if (role === 'Admin' || role === 'Faculty') {
+    // Normal notifications for faculty PLUS internal admin panel notifications
+    return allNotifs.filter(
+      (n) =>
+        (n.channel === 'normal' && (n.recipientRole === 'faculty' || n.recipientRole === 'admin' || n.recipientRole === 'all')) ||
+        n.channel === 'internal_admin'
+    )
+  }
+
+  // Super Admin: sees all system notifications
+  return allNotifs
+}

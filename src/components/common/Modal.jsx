@@ -48,11 +48,11 @@ export default function Modal({
         role="dialog"
         aria-modal="true"
         className={`
-          relative w-full ${sizeStyles[size] || sizeStyles.md} bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden transform transition-all z-10
+          relative w-full ${sizeStyles[size] || sizeStyles.md} max-h-[90vh] flex flex-col bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden transform transition-all z-10
         `}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
           <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
           {onClose && (
             <button
@@ -67,11 +67,11 @@ export default function Modal({
         </div>
 
         {/* Content */}
-        <div className="p-6 text-slate-700 text-sm">{children}</div>
+        <div className="p-6 text-slate-700 text-sm overflow-y-auto flex-1">{children}</div>
 
         {/* Footer */}
         {footer && (
-          <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3 rounded-b-2xl">
+          <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3 rounded-b-2xl shrink-0">
             {footer}
           </div>
         )}
