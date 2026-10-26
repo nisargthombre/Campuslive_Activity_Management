@@ -9,34 +9,40 @@ export { normalizeRole }
 
 // Helper to normalize database rows and API responses into a unified profile format
 function normalizeProfile(apiProfile, user = null) {
-  if (!apiProfile) return null
+  if (!apiProfile && !user) return null
+  const meta = user?.user_metadata || {}
+  const source = apiProfile || meta
   return {
-    ...apiProfile,
-    id: apiProfile.id || user?.id,
-    full_name: apiProfile.fullName || apiProfile.full_name || user?.user_metadata?.full_name || '',
-    fullName: apiProfile.fullName || apiProfile.full_name || user?.user_metadata?.full_name || '',
-    email: apiProfile.email || user?.email || '',
-    role: apiProfile.role ? normalizeRole(apiProfile.role) : 'student',
-    department: apiProfile.department || null,
-    course: apiProfile.course || null,
-    student_id: apiProfile.studentId || apiProfile.student_id || '',
-    studentId: apiProfile.studentId || apiProfile.student_id || '',
-    academic_year: apiProfile.academicYear || apiProfile.academic_year || '',
-    academicYear: apiProfile.academicYear || apiProfile.academic_year || '',
-    division: apiProfile.division || null,
-    enrollment_year: apiProfile.enrollmentYear || apiProfile.enrollment_year || '',
-    enrollmentYear: apiProfile.enrollmentYear || apiProfile.enrollment_year || '',
-    phone: apiProfile.phone || null,
-    profile_image: (apiProfile.profileImage || apiProfile.profile_image)?.trim() || null,
-    profileImage: (apiProfile.profileImage || apiProfile.profile_image)?.trim() || null,
-    social_links: apiProfile.socialLinks || apiProfile.social_links || {},
-    socialLinks: apiProfile.socialLinks || apiProfile.social_links || {},
-    is_active: apiProfile.isActive !== undefined ? apiProfile.isActive : apiProfile.is_active !== false,
-    isActive: apiProfile.isActive !== undefined ? apiProfile.isActive : apiProfile.is_active !== false,
-    created_at: apiProfile.createdAt || apiProfile.created_at || null,
-    createdAt: apiProfile.createdAt || apiProfile.created_at || null,
-    updated_at: apiProfile.updatedAt || apiProfile.updated_at || null,
-    updatedAt: apiProfile.updatedAt || apiProfile.updated_at || null,
+    ...source,
+    id: apiProfile?.id || user?.id,
+    full_name: apiProfile?.fullName || apiProfile?.full_name || meta.full_name || '',
+    fullName: apiProfile?.fullName || apiProfile?.full_name || meta.full_name || '',
+    email: apiProfile?.email || user?.email || '',
+    role: apiProfile?.role
+      ? normalizeRole(apiProfile.role)
+      : meta.role
+      ? normalizeRole(meta.role)
+      : 'student',
+    department: apiProfile?.department || meta.department || null,
+    course: apiProfile?.course || meta.course || null,
+    student_id: apiProfile?.studentId || apiProfile?.student_id || meta.student_id || '',
+    studentId: apiProfile?.studentId || apiProfile?.student_id || meta.student_id || '',
+    academic_year: apiProfile?.academicYear || apiProfile?.academic_year || meta.academic_year || '',
+    academicYear: apiProfile?.academicYear || apiProfile?.academic_year || meta.academic_year || '',
+    division: apiProfile?.division || meta.division || null,
+    enrollment_year: apiProfile?.enrollmentYear || apiProfile?.enrollment_year || meta.enrollment_year || '',
+    enrollmentYear: apiProfile?.enrollmentYear || apiProfile?.enrollment_year || meta.enrollment_year || '',
+    phone: apiProfile?.phone || meta.phone || null,
+    profile_image: (apiProfile?.profileImage || apiProfile?.profile_image || meta.profile_image)?.trim() || null,
+    profileImage: (apiProfile?.profileImage || apiProfile?.profile_image || meta.profile_image)?.trim() || null,
+    social_links: apiProfile?.socialLinks || apiProfile?.social_links || meta.social_links || {},
+    socialLinks: apiProfile?.socialLinks || apiProfile?.social_links || meta.social_links || {},
+    is_active: apiProfile?.isActive !== undefined ? apiProfile.isActive : (meta.is_active !== undefined ? meta.is_active : true),
+    isActive: apiProfile?.isActive !== undefined ? apiProfile.isActive : (meta.is_active !== undefined ? meta.is_active : true),
+    created_at: apiProfile?.createdAt || apiProfile?.created_at || user?.created_at || null,
+    createdAt: apiProfile?.createdAt || apiProfile?.created_at || user?.created_at || null,
+    updated_at: apiProfile?.updatedAt || apiProfile?.updated_at || user?.updated_at || null,
+    updatedAt: apiProfile?.updatedAt || apiProfile?.updated_at || user?.updated_at || null,
   }
 }
 
@@ -61,7 +67,7 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState(null)
   const [isProfileMissing, setIsProfileMissing] = useState(false)
 
-  // Helper to fetch the authenticated user profile via backend API: GET /api/profile/me
+  // Helper to fetch the authenticated user profile
   const fetchProfile = useCallback(async (token = null) => {
     let accessToken = token
     let currentSessionUser = null
@@ -76,6 +82,15 @@ export function AuthProvider({ children }) {
       } catch (err) {
         console.error('[AuthContext] Error retrieving session for profile fetch:', err)
       }
+    } else {
+      try {
+        const {
+          data: { user: sessionUser },
+        } = await supabase.auth.getUser(accessToken)
+        currentSessionUser = sessionUser
+      } catch {
+        // ignore
+      }
     }
 
     if (!accessToken) {
@@ -85,100 +100,87 @@ export function AuthProvider({ children }) {
       return null
     }
 
+    const isLocalhost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    const hasCustomApi = Boolean(import.meta.env.VITE_API_URL)
+
+    // Only attempt Express backend if explicitly configured OR if running locally
+    if (hasCustomApi || isLocalhost) {
+      try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 3000)
+
+        const response = await fetch(`${API_BASE_URL}/api/profile/me`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal,
+        })
+        clearTimeout(timeoutId)
+
+        if (response.ok) {
+          const result = await response.json()
+          const apiProfile = result.profile || result
+          const normalized = normalizeProfile(apiProfile, currentSessionUser)
+          setProfile(normalized)
+          setError(null)
+          setIsProfileMissing(false)
+          return normalized
+        }
+      } catch {
+        // Fall through to direct Supabase query
+      }
+    }
+
+    // Direct Supabase query (Preferred on deployed production environments like Vercel)
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 6000)
+      const authUser =
+        currentSessionUser || (await supabase.auth.getUser(accessToken)).data?.user
 
-      const response = await fetch(`${API_BASE_URL}/api/profile/me`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        signal: controller.signal,
-      })
-      clearTimeout(timeoutId)
+      if (authUser?.id) {
+        const { data: directProfile, error: directErr } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .maybeSingle()
 
-      if (response.status === 401) {
-        setProfile(null)
-        setError('Session expired or unauthorized. Please sign in again.')
-        return null
+        if (!directErr && directProfile) {
+          const normalized = normalizeProfile(directProfile, authUser)
+          setProfile(normalized)
+          setError(null)
+          setIsProfileMissing(false)
+          return normalized
+        }
+
+        // Fallback to user metadata from auth signup
+        if (authUser.user_metadata?.full_name || authUser.email) {
+          const fallback = normalizeProfile(directProfile || null, authUser)
+          setProfile(fallback)
+          setError(null)
+          setIsProfileMissing(false)
+          return fallback
+        }
       }
+    } catch (fallbackErr) {
+      console.warn('[AuthContext] Direct Supabase fallback error:', fallbackErr)
+    }
 
-      if (response.status === 403) {
-        const data = await response.json().catch(() => ({}))
-        setProfile(null)
-        setError(data.message || 'Access forbidden. Your account may be inactive.')
-        return null
-      }
-
-      if (response.status === 404) {
-        setProfile(null)
-        setIsProfileMissing(true)
-        setError(null)
-        return null
-      }
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        setProfile(null)
-        setError(data.message || `Server error (${response.status}) loading profile.`)
-        return null
-      }
-
-      const result = await response.json()
-      const apiProfile = result.profile || result
-      const normalized = normalizeProfile(apiProfile, currentSessionUser)
-
-      setProfile(normalized)
+    // Final fallback to session user if available
+    if (currentSessionUser) {
+      const fallback = normalizeProfile(null, currentSessionUser)
+      setProfile(fallback)
       setError(null)
       setIsProfileMissing(false)
-      return normalized
-    } catch (err) {
-      console.warn('[AuthContext] Primary backend profile request notice:', err.message || err)
-
-      // Resilient fallback: Direct Supabase query if Express backend is offline or network fails
-      try {
-        const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser(accessToken)
-
-        if (authUser?.id) {
-          const { data: directProfile, error: directErr } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', authUser.id)
-            .maybeSingle()
-
-          if (!directErr && directProfile) {
-            const normalized = normalizeProfile(directProfile, authUser)
-            setProfile(normalized)
-            setError(null)
-            setIsProfileMissing(false)
-            return normalized
-          } else if (!directErr && !directProfile) {
-            setProfile(null)
-            setIsProfileMissing(true)
-            setError(null)
-            return null
-          }
-        }
-      } catch (fallbackErr) {
-        console.warn('[AuthContext] Direct Supabase fallback notice:', fallbackErr?.message || fallbackErr)
-      }
-
-      setProfile(null)
-      const isAbort = err?.name === 'AbortError'
-      const isNet = err?.message?.includes('fetch') || err?.name === 'TypeError'
-      setError(
-        isAbort
-          ? 'Profile request timed out. Please verify backend server is responsive.'
-          : isNet
-          ? 'Unable to connect to the profile service. Please check your network and retry.'
-          : err?.message || 'An unexpected error occurred while loading profile.'
-      )
-      return null
+      return fallback
     }
+
+    setProfile(null)
+    setIsProfileMissing(false)
+    setError(null)
+    return null
   }, [])
 
   // Function to re-fetch the profile on demand (e.g. after editing profile or retrying)

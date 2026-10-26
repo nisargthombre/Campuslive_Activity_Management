@@ -69,9 +69,13 @@ export default function Login() {
 
       if (error) {
         setIsLoading(false)
+        const msg = error.message || 'Invalid email or password. Please try again.'
+        const isUnconfirmed = msg.toLowerCase().includes('email not confirmed')
         setErrors((prev) => ({
           ...prev,
-          password: error.message || 'Invalid email or password. Please try again.',
+          password: isUnconfirmed
+            ? 'Email not confirmed. Please check your verification email or disable "Confirm email" in Supabase Authentication settings.'
+            : msg,
         }))
         return
       }
