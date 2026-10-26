@@ -5,6 +5,8 @@
  * 2. Internal Admin Panel Notifications (Audience: Admin/Faculty ONLY, Students never receive or see)
  */
 
+import { normalizeRole } from '../lib/authUtils.js'
+
 export const notificationCategories = [
   'All',
   'Unread',
@@ -201,50 +203,242 @@ export const initialNotifications = [
   },
 ]
 
-export function getStoredNotifications() {
-  try {
-    const saved = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)
-    if (saved) return JSON.parse(saved)
-  } catch {
-    // fallback
-  }
-  return initialNotifications
+export function getUserScopeKey(user) {
+  if (!user) return 'anonymous'
+  const rawId =
+    user.id ||
+    user.student_id ||
+    user.studentId ||
+    user.email ||
+    user.fullName ||
+    user.full_name ||
+    user.name ||
+    'anonymous'
+  return String(rawId)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_-]/g, '_')
 }
 
-export function saveStoredNotifications(notifications) {
+export function getUserReadMap(user) {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return {}
+  const scopeKey = getUserScopeKey(user)
+  const storageKey = `campuslive_notif_reads_${scopeKey}`
+  try {
+    const raw = localStorage.getItem(storageKey)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed
+      }
+    }
+  } catch (err) {
+    console.warn('[Notifications] Failed to read user read map:', err)
+  }
+  return {}
+}
+
+export function saveUserReadMap(user, readMap) {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return
+  const scopeKey = getUserScopeKey(user)
+  const storageKey = `campuslive_notif_reads_${scopeKey}`
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(readMap || {}))
+  } catch (err) {
+    console.warn('[Notifications] Failed to save user read map:', err)
+  }
+}
+
+export function getStoredNotifications() {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    return initialNotifications.map((n) => ({ ...n }))
+  }
+  try {
+    const saved = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (Array.isArray(parsed)) {
+        const seen = new Set()
+        const valid = []
+        for (const item of parsed) {
+          if (item && typeof item === 'object' && item.id && !seen.has(item.id)) {
+            seen.add(item.id)
+            valid.push(item)
+          }
+        }
+        if (valid.length > 0) return valid
+      }
+    }
+  } catch (err) {
+    console.warn('[Notifications] Failed to parse stored notifications, using initial fallback:', err)
+  }
+  return initialNotifications.map((n) => ({ ...n }))
+}
+
+export function saveStoredNotifications(notifications, user = null) {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return
   try {
     localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications))
-    window.dispatchEvent(new CustomEvent(NOTIFICATIONS_EVENT_KEY, { detail: notifications }))
-  } catch {
-    // ignore
+    window.dispatchEvent(
+      new CustomEvent(NOTIFICATIONS_EVENT_KEY, {
+        detail: { notifications, user },
+      })
+    )
+  } catch (err) {
+    console.warn('[Notifications] Failed to save notifications to storage:', err)
   }
+}
+
+export function isNotificationTargetedToUser(notif, user, normRole = 'student') {
+  if (!notif) return false
+
+  // Channel & recipient role check
+  if (normRole === 'student') {
+    // Under NO circumstances can student see internal_admin notifications
+    if (notif.channel !== 'normal') return false
+    // Must be intended for student or all
+    const rRole = (notif.recipientRole || '').toLowerCase()
+    if (rRole !== 'student' && rRole !== 'all') return false
+
+    // Target audience safety checks
+    const target = notif.targetAudience || ''
+    const lowerTarget = target.toLowerCase()
+    if (lowerTarget.includes('admin') || lowerTarget.includes('faculty')) {
+      return false
+    }
+
+    // Check individual student target
+    const indMatch = target.match(/Individual Student \(([^)]+)\)/i)
+    if (indMatch) {
+      if (!user) return false // unauthenticated/unspecified users cannot see private student notifications
+      const targetNameOrId = indMatch[1].trim().toLowerCase()
+      const uName = (user.name || user.fullName || user.full_name || '').trim().toLowerCase()
+      const uId = (user.id || '').trim().toLowerCase()
+      const uStudentId = (user.studentId || user.student_id || '').trim().toLowerCase()
+      const uEmail = (user.email || '').trim().toLowerCase()
+
+      const nameMatch =
+        uName &&
+        (targetNameOrId === uName ||
+          targetNameOrId.includes(uName) ||
+          uName.includes(targetNameOrId))
+      const idMatch = uId && targetNameOrId === uId
+      const studentIdMatch = uStudentId && targetNameOrId === uStudentId
+      const emailMatch = uEmail && targetNameOrId === uEmail
+
+      return Boolean(nameMatch || idMatch || studentIdMatch || emailMatch)
+    }
+
+    return true
+  }
+
+  if (normRole === 'faculty' || normRole === 'admin') {
+    if (notif.channel === 'internal_admin') return true
+    const rRole = (notif.recipientRole || '').toLowerCase()
+    return rRole === 'faculty' || rRole === 'admin' || rRole === 'all'
+  }
+
+  if (normRole === 'super_admin') {
+    return true
+  }
+
+  // Safe fallback: treat as student
+  return (
+    notif.channel === 'normal' &&
+    ((notif.recipientRole || '').toLowerCase() === 'student' ||
+      (notif.recipientRole || '').toLowerCase() === 'all')
+  )
 }
 
 /**
- * Filter notifications for specific logged-in user role
- * - Student: normal student notifications ONLY (never internal_admin)
- * - Admin / Faculty: normal faculty notifications + internal_admin notifications
+ * Filter notifications for specific logged-in user role & user profile
+ * - Student: normal student notifications ONLY (never internal_admin, never faculty/admin)
+ * - Faculty: normal faculty notifications + internal_admin notifications
+ * - Admin: normal admin/faculty notifications + internal_admin notifications
  * - Super Admin: all notifications
  */
-export function getNotificationsForRole(role = 'Student') {
+export function getNotificationsForRole(role = 'student', user = null) {
+  const normRole = normalizeRole(role) || 'student'
   const allNotifs = getStoredNotifications()
+  const userReads = getUserReadMap(user)
 
-  if (role === 'Student') {
-    // Strictly normal channel and intended for student
-    return allNotifs.filter(
-      (n) => n.channel === 'normal' && (n.recipientRole === 'student' || n.recipientRole === 'all')
-    )
+  const seenIds = new Set()
+  const result = []
+
+  for (const n of allNotifs) {
+    if (!n || !n.id || seenIds.has(n.id)) continue
+    seenIds.add(n.id)
+
+    if (isNotificationTargetedToUser(n, user, normRole)) {
+      // Determine effective unread status:
+      // If userReads has recorded read status for this item, userReads[n.id] === true means read (isUnread = false)
+      const isReadInUserMap = userReads[n.id]
+      const effectiveUnread =
+        isReadInUserMap !== undefined ? !isReadInUserMap : Boolean(n.isUnread)
+
+      result.push({
+        ...n,
+        isUnread: effectiveUnread,
+      })
+    }
   }
 
-  if (role === 'Admin' || role === 'Faculty') {
-    // Normal notifications for faculty PLUS internal admin panel notifications
-    return allNotifs.filter(
-      (n) =>
-        (n.channel === 'normal' && (n.recipientRole === 'faculty' || n.recipientRole === 'admin' || n.recipientRole === 'all')) ||
-        n.channel === 'internal_admin'
-    )
-  }
-
-  // Super Admin: sees all system notifications
-  return allNotifs
+  return result
 }
+
+export function getNotificationsForUser(user) {
+  const role = user?.role || 'student'
+  return getNotificationsForRole(role, user)
+}
+
+export function getUnreadNotificationCount(user, role = null) {
+  const effectiveRole = role || user?.role || 'student'
+  const notifs = getNotificationsForRole(effectiveRole, user)
+  return notifs.filter((n) => n.isUnread).length
+}
+
+export function markNotificationAsRead(id, nextIsUnread = false, user = null) {
+  if (!id) return
+
+  // 1. Update user-scoped read map
+  const userReads = getUserReadMap(user)
+  userReads[id] = !nextIsUnread
+  saveUserReadMap(user, userReads)
+
+  // 2. Dispatch notifications update event for cross-view synchronization
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(NOTIFICATIONS_EVENT_KEY, {
+        detail: { id, isUnread: nextIsUnread, user },
+      })
+    )
+  }
+}
+
+export function markAllNotificationsAsRead(user = null, targetIds = null) {
+  const role = user?.role || 'student'
+  const currentNotifs = getNotificationsForRole(role, user)
+  const idsToMark =
+    Array.isArray(targetIds) && targetIds.length > 0
+      ? targetIds
+      : currentNotifs.filter((n) => n.isUnread).map((n) => n.id)
+
+  if (idsToMark.length === 0) return
+
+  // 1. Update user-scoped read map
+  const userReads = getUserReadMap(user)
+  for (const id of idsToMark) {
+    userReads[id] = true
+  }
+  saveUserReadMap(user, userReads)
+
+  // 2. Dispatch notifications update event for cross-view synchronization
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(NOTIFICATIONS_EVENT_KEY, {
+        detail: { ids: idsToMark, isUnread: false, user },
+      })
+    )
+  }
+}
+

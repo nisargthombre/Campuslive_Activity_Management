@@ -106,7 +106,6 @@ export const initialRegistrations = [
     thumbnailGradient: 'from-slate-600 to-zinc-700',
     tabGroup: 'completed',
     organizer: 'Civil Engineering Forum',
-    attendanceNote: 'Attended & verified by faculty coordinator',
   },
   {
     id: 'reg-107',
@@ -125,7 +124,6 @@ export const initialRegistrations = [
     thumbnailGradient: 'from-amber-600 to-orange-700',
     tabGroup: 'completed',
     organizer: 'Coding Club',
-    attendanceNote: 'Participation confirmed',
   },
   {
     id: 'reg-108',
@@ -144,7 +142,6 @@ export const initialRegistrations = [
     thumbnailGradient: 'from-teal-600 to-emerald-700',
     tabGroup: 'completed',
     organizer: 'Student Affairs Council',
-    attendanceNote: 'Attended session',
   },
   {
     id: 'reg-109',

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import {
   CampusLogo,
   IconMail,
@@ -15,6 +16,8 @@ import Button from '../components/common/Button'
 
 export default function Login() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const fromPath = location.state?.from?.pathname || '/student/dashboard'
 
   // Form State
   const [email, setEmail] = useState('')
@@ -48,7 +51,7 @@ export default function Login() {
   }
 
   // Handle Form Submit
-  const handleSignIn = (e) => {
+  const handleSignIn = async (e) => {
     e.preventDefault()
     setGoogleNotice(null)
 
@@ -58,25 +61,44 @@ export default function Login() {
 
     setIsLoading(true)
 
-    // Simulate mock frontend login delay
-    setTimeout(() => {
-      setIsLoading(false)
-      try {
-        // Set mock session for Nisarg / Student
-        localStorage.setItem(
-          'campuslive_user',
-          JSON.stringify({
-            name: 'Nisarg',
-            role: 'Student',
-            email: email.trim() || 'nisarg@campus.edu',
-            avatar: 'N',
-          })
-        )
-      } catch {
-        // ignore
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      })
+
+      if (error) {
+        setIsLoading(false)
+        setErrors((prev) => ({
+          ...prev,
+          password: error.message || 'Invalid email or password. Please try again.',
+        }))
+        return
       }
-      navigate('/student/dashboard')
-    }, 700)
+
+      setIsLoading(false)
+      window.dispatchEvent(new Event('campuslive_auth_updated'))
+      navigate(fromPath, { replace: true })
+    } catch (err) {
+      setIsLoading(false)
+      const isNetworkError =
+        err?.message?.includes('fetch') ||
+        err?.message?.includes('Failed to fetch') ||
+        err?.name === 'TypeError'
+
+      if (isNetworkError) {
+        setErrors((prev) => ({
+          ...prev,
+          password:
+            'Unable to reach authentication server. Please check your network connection and try again.',
+        }))
+      } else {
+        setErrors((prev) => ({
+          ...prev,
+          password: err?.message || 'An unexpected error occurred. Please try again.',
+        }))
+      }
+    }
   }
 
   // Handle Google Login Click (UI Only)

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import {
   CampusLogo,
   IconMail,
@@ -16,6 +16,8 @@ import Badge from '../components/common/Badge'
 
 export default function SuperAdminLogin() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const fromPath = location.state?.from?.pathname || '/admin/dashboard'
 
   // Form State
   const [email, setEmail] = useState('')
@@ -76,10 +78,11 @@ export default function SuperAdminLogin() {
             department: 'Institutional Governance & System Administration',
           })
         )
+        window.dispatchEvent(new Event('campuslive_auth_updated'))
       } catch {
         // ignore
       }
-      navigate('/admin/dashboard')
+      navigate(fromPath, { replace: true })
     }, 700)
   }
 

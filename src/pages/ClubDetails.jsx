@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import StudentLayout from '../layouts/StudentLayout'
 import Badge from '../components/common/Badge'
 import Button from '../components/common/Button'
 import EmptyState from '../components/common/EmptyState'
+import LoadingState from '../components/common/LoadingState'
 import {
   IconUsers,
   IconActivity,
@@ -15,43 +16,157 @@ import {
   IconArrowLeft,
   IconUser,
   IconClose,
+  IconAlertCircle,
 } from '../components/icons/Icons'
-import { getClubById } from '../data/clubsData'
+import { getClubById, CLUBS_EVENT_KEY } from '../data/clubsData'
+import { supabase } from '../lib/supabase'
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 export default function ClubDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
+
+  // Club data & loading states
+  const [clubState, setClubState] = useState(() => getClubById(id))
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState(null)
+  const [dataSource, setDataSource] = useState('demo')
+  const [toast, setToast] = useState(null)
 
   // Scroll to top on load or ID change
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [id])
 
-  // Retrieve initial club data
-  const baseClub = getClubById(id)
+  const [reloadToken, setReloadToken] = useState(0)
+  const refreshClubDetails = useCallback(() => {
+    setIsLoading(true)
+    setError(null)
+    setReloadToken((k) => k + 1)
+  }, [])
 
-  // Local state to support interactive mock join / leave actions
-  const [userStatus, setUserStatus] = useState(null)
-  const [deltaCount, setDeltaCount] = useState(0)
-  const [prevId, setPrevId] = useState(id)
+  // Fetch single club details from API with demo fallback
+  useEffect(() => {
+    let ignore = false
 
-  // Reset override when id route changes
-  if (prevId !== id) {
-    setPrevId(id)
-    setUserStatus(null)
-    setDeltaCount(0)
-  }
+    const loadClubDetails = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
 
-  const [toast, setToast] = useState(null)
+        const headers = {}
+        if (session?.access_token) {
+          headers.Authorization = `Bearer ${session.access_token}`
+        }
 
-  // Compute resolved club state
-  const clubState = baseClub
-    ? {
-        ...baseClub,
-        membershipStatus: userStatus !== null ? userStatus : baseClub.membershipStatus,
-        membersCount: Math.max(0, baseClub.membersCount + deltaCount),
+        const response = await fetch(`${API_BASE_URL}/api/clubs/${id}`, {
+          method: 'GET',
+          headers,
+        })
+
+        if (response.status === 404) {
+          if (!ignore) {
+            setClubState(null)
+            setDataSource('live')
+          }
+          return
+        }
+
+        if (!response.ok) {
+          const errorJson = await response.json().catch(() => ({}))
+          throw new Error(errorJson.message || `Server returned ${response.status}`)
+        }
+
+        const result = await response.json()
+        if (result.success && result.club) {
+          let loaded = result.club
+          if (!ignore) {
+            setDataSource(result.source || 'live')
+          }
+
+          // If demo fallback, also check local demo membership overlay
+          if (result.source === 'demo') {
+            try {
+              const savedDemo = JSON.parse(
+                localStorage.getItem('campuslive_demo_club_memberships') || '{}'
+              )
+              if (savedDemo[loaded.id]) {
+                const dm = savedDemo[loaded.id]
+                const effStatus = dm.status === 'joined' ? 'Joined' : dm.status === 'pending' ? 'Pending' : 'Not Joined'
+                loaded = {
+                  ...loaded,
+                  membershipStatus: effStatus,
+                  membersCount:
+                    dm.status === 'joined' && loaded.membershipStatus !== 'Joined'
+                      ? loaded.membersCount + 1
+                      : dm.status === 'left' && loaded.membershipStatus === 'Joined'
+                      ? Math.max(0, loaded.membersCount - 1)
+                      : loaded.membersCount,
+                }
+              }
+            } catch {
+              // ignore
+            }
+          }
+          if (!ignore) setClubState(loaded)
+        } else {
+          const local = getClubById(id)
+          if (!ignore) {
+            setClubState(local)
+            setDataSource('demo')
+          }
+        }
+      } catch (err) {
+        console.warn('[ClubDetails] Fetch error, falling back to local dataset:', err.message || err)
+        const local = getClubById(id)
+        if (local) {
+          try {
+            const savedDemo = JSON.parse(
+              localStorage.getItem('campuslive_demo_club_memberships') || '{}'
+            )
+            if (savedDemo[local.id]) {
+              const dm = savedDemo[local.id]
+              const effStatus = dm.status === 'joined' ? 'Joined' : dm.status === 'pending' ? 'Pending' : 'Not Joined'
+              if (!ignore) {
+                setClubState({
+                  ...local,
+                  membershipStatus: effStatus,
+                  membersCount:
+                    dm.status === 'joined' && local.membershipStatus !== 'Joined'
+                      ? local.membersCount + 1
+                      : dm.status === 'left' && local.membershipStatus === 'Joined'
+                      ? Math.max(0, local.membersCount - 1)
+                      : local.membersCount,
+                })
+              }
+            } else {
+              if (!ignore) setClubState(local)
+            }
+          } catch {
+            if (!ignore) setClubState(local)
+          }
+        } else {
+          if (!ignore) setClubState(null)
+        }
+        if (!ignore) {
+          setDataSource('demo')
+          setError('Could not connect to live clubs server. Displaying local demo data.')
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false)
+        }
       }
-    : null
+    }
+
+    loadClubDetails()
+    return () => {
+      ignore = true
+    }
+  }, [id, reloadToken])
 
   // Toast notification helper
   const showToast = (message, type = 'success') => {
@@ -61,6 +176,176 @@ export default function ClubDetails() {
     }, 4000)
   }
 
+  // Handle Join Club (server-backed with demo fallback)
+  const handleJoinClub = async () => {
+    if (!clubState || isSubmitting) return
+    setIsSubmitting(true)
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      const token = session?.access_token
+      let joinedSuccess = false
+      let updatedMembersCount = clubState.membersCount + 1
+      let serverMessage = `You have successfully joined ${clubState.name}! Welcome to the community.`
+
+      if (token) {
+        const res = await fetch(`${API_BASE_URL}/api/clubs/${clubState.id}/join`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        })
+
+        const resData = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          if (res.status === 409) {
+            showToast(resData.message || `You are already a member of ${clubState.name}.`, 'info')
+            refreshClubDetails()
+            return
+          }
+          throw new Error(resData.message || 'Failed to join club on the server.')
+        }
+
+        joinedSuccess = true
+        if (typeof resData.membersCount === 'number') {
+          updatedMembersCount = resData.membersCount
+        }
+        if (resData.message) {
+          serverMessage = resData.message
+        }
+      } else {
+        // Safe offline / demo client join
+        try {
+          const savedDemo = JSON.parse(
+            localStorage.getItem('campuslive_demo_club_memberships') || '{}'
+          )
+          savedDemo[clubState.id] = { status: 'joined', joinedAt: new Date().toISOString() }
+          localStorage.setItem('campuslive_demo_club_memberships', JSON.stringify(savedDemo))
+        } catch {
+          // ignore
+        }
+        joinedSuccess = true
+        serverMessage = `You have joined ${clubState.name} (Demo Mode).`
+      }
+
+      if (joinedSuccess) {
+        setClubState((prev) => ({
+          ...prev,
+          membershipStatus: 'Joined',
+          membersCount: updatedMembersCount,
+        }))
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent(CLUBS_EVENT_KEY, {
+              detail: { clubId: clubState.id, status: 'joined' },
+            })
+          )
+        }
+        showToast(serverMessage, 'success')
+      }
+    } catch (err) {
+      console.error('[ClubDetails] Join error:', err)
+      showToast(err.message || 'Failed to join club. Please try again.', 'danger')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // Handle Leave Club (server-backed with demo fallback)
+  const handleLeaveClub = async () => {
+    if (!clubState || isSubmitting) return
+    setIsSubmitting(true)
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      const token = session?.access_token
+      let leaveSuccess = false
+      let updatedMembersCount = Math.max(0, clubState.membersCount - 1)
+      let serverMessage = `You have left ${clubState.name}.`
+
+      if (token) {
+        const res = await fetch(`${API_BASE_URL}/api/clubs/${clubState.id}/leave`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        })
+
+        const resData = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(resData.message || 'Failed to leave club on the server.')
+        }
+
+        leaveSuccess = true
+        if (typeof resData.membersCount === 'number') {
+          updatedMembersCount = resData.membersCount
+        }
+        if (resData.message) {
+          serverMessage = resData.message
+        }
+      } else {
+        // Safe offline / demo client leave
+        try {
+          const savedDemo = JSON.parse(
+            localStorage.getItem('campuslive_demo_club_memberships') || '{}'
+          )
+          savedDemo[clubState.id] = { status: 'left', leftAt: new Date().toISOString() }
+          localStorage.setItem('campuslive_demo_club_memberships', JSON.stringify(savedDemo))
+        } catch {
+          // ignore
+        }
+        leaveSuccess = true
+        serverMessage = `You have left ${clubState.name} (Demo Mode).`
+      }
+
+      if (leaveSuccess) {
+        setClubState((prev) => ({
+          ...prev,
+          membershipStatus: 'Not Joined',
+          membersCount: updatedMembersCount,
+        }))
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent(CLUBS_EVENT_KEY, {
+              detail: { clubId: clubState.id, status: 'left' },
+            })
+          )
+        }
+        showToast(serverMessage, 'info')
+      }
+    } catch (err) {
+      console.error('[ClubDetails] Leave error:', err)
+      showToast(err.message || 'Failed to leave club. Please try again.', 'danger')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // Handle Cancel Request
+  const handleCancelRequest = async () => {
+    // For pending requests, canceling is handled by leaving/clearing the request
+    await handleLeaveClub()
+  }
+
+  // Loading State
+  if (isLoading && !clubState) {
+    return (
+      <StudentLayout>
+        <div className="py-16">
+          <LoadingState message="Loading club details..." />
+        </div>
+      </StudentLayout>
+    )
+  }
+
   // Not Found State
   if (!clubState) {
     return (
@@ -68,33 +353,13 @@ export default function ClubDetails() {
         <div className="py-12">
           <EmptyState
             title="Club Not Found"
-            description={`We could not find any student club with the ID "${id}". Please explore all available clubs in the directory.`}
+            description={`We could not find any student club with the identifier "${id}". Please explore all available clubs in the directory.`}
             actionLabel="Back to Clubs"
             onAction={() => navigate('/student/clubs')}
           />
         </div>
       </StudentLayout>
     )
-  }
-
-  // Handle Join Club
-  const handleJoinClub = () => {
-    setUserStatus('Joined')
-    setDeltaCount((prev) => prev + 1)
-    showToast(`You have successfully joined ${clubState.name}! Welcome to the community.`, 'success')
-  }
-
-  // Handle Leave Club
-  const handleLeaveClub = () => {
-    setUserStatus('Not Joined')
-    setDeltaCount((prev) => prev - 1)
-    showToast(`You have left ${clubState.name}.`, 'info')
-  }
-
-  // Handle Cancel Request
-  const handleCancelRequest = () => {
-    setUserStatus('Not Joined')
-    showToast(`Membership request for ${clubState.name} was cancelled.`, 'info')
   }
 
   // Status configuration
@@ -128,6 +393,8 @@ export default function ClubDetails() {
             className={`w-2 h-2 rounded-full shrink-0 ${
               toast.type === 'success'
                 ? 'bg-emerald-500'
+                : toast.type === 'danger'
+                ? 'bg-rose-500'
                 : toast.type === 'info'
                 ? 'bg-blue-500'
                 : 'bg-amber-500'
@@ -141,6 +408,24 @@ export default function ClubDetails() {
           >
             <IconClose className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* Error / Offline Retry Banner */}
+      {error && (
+        <div className="mb-5 p-4 rounded-xl border border-amber-200 bg-amber-50/70 text-amber-800 text-sm flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <IconAlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refreshClubDetails()}
+            className="shrink-0 text-amber-800 border-amber-300 hover:bg-amber-100"
+          >
+            Retry Connection
+          </Button>
         </div>
       )}
 
@@ -195,6 +480,11 @@ export default function ClubDetails() {
                   {currentStatusConfig.icon}
                   {currentStatusConfig.label}
                 </Badge>
+                {dataSource === 'demo' && (
+                  <Badge variant="warning" size="sm">
+                    Offline Demo
+                  </Badge>
+                )}
                 <span className="text-xs text-slate-500 font-medium">
                   Est. {clubState.founded}
                 </span>
@@ -217,9 +507,10 @@ export default function ClubDetails() {
                 variant="outline"
                 size="md"
                 onClick={handleLeaveClub}
+                disabled={isSubmitting}
                 className="w-full md:w-auto text-rose-600 border-rose-200 hover:bg-rose-50 hover:border-rose-300"
               >
-                Leave Club
+                {isSubmitting ? 'Leaving...' : 'Leave Club'}
               </Button>
             )}
 
@@ -228,9 +519,10 @@ export default function ClubDetails() {
                 variant="outline"
                 size="md"
                 onClick={handleCancelRequest}
+                disabled={isSubmitting}
                 className="w-full md:w-auto text-amber-700 border-amber-300 hover:bg-amber-50"
               >
-                Cancel Request
+                {isSubmitting ? 'Cancelling...' : 'Cancel Request'}
               </Button>
             )}
 
@@ -239,9 +531,10 @@ export default function ClubDetails() {
                 variant="primary"
                 size="md"
                 onClick={handleJoinClub}
+                disabled={isSubmitting}
                 className="w-full md:w-auto shadow-xs"
               >
-                Join Club
+                {isSubmitting ? 'Joining...' : 'Join Club'}
               </Button>
             )}
           </div>
@@ -609,9 +902,10 @@ export default function ClubDetails() {
                     fullWidth
                     size="sm"
                     onClick={handleLeaveClub}
+                    disabled={isSubmitting}
                     className="text-rose-600 border-rose-200 hover:bg-rose-50 hover:border-rose-300"
                   >
-                    Leave Club
+                    {isSubmitting ? 'Leaving...' : 'Leave Club'}
                   </Button>
                 </div>
               ) : clubState.membershipStatus === 'Pending' ? (
@@ -625,9 +919,10 @@ export default function ClubDetails() {
                     fullWidth
                     size="sm"
                     onClick={handleCancelRequest}
+                    disabled={isSubmitting}
                     className="text-amber-700 border-amber-300 hover:bg-amber-50"
                   >
-                    Cancel Request
+                    {isSubmitting ? 'Cancelling...' : 'Cancel Request'}
                   </Button>
                 </div>
               ) : (
@@ -636,9 +931,10 @@ export default function ClubDetails() {
                   fullWidth
                   size="md"
                   onClick={handleJoinClub}
+                  disabled={isSubmitting}
                   className="shadow-xs"
                 >
-                  Join {clubState.name}
+                  {isSubmitting ? 'Joining...' : `Join ${clubState.name}`}
                 </Button>
               )}
             </div>

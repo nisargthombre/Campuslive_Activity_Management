@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import {
   CampusLogo,
   IconMail,
@@ -36,6 +37,7 @@ export default function Register() {
   const [errors, setErrors] = useState({})
   const [isLoading, setIsLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
+  const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false)
   const [googleNotice, setGoogleNotice] = useState(null)
 
   // Department options
@@ -62,8 +64,8 @@ export default function Register() {
   // Handle Input Changes
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: null }))
+    if (errors[field] || errors.general) {
+      setErrors((prev) => ({ ...prev, [field]: null, general: null }))
     }
   }
 
@@ -131,7 +133,7 @@ export default function Register() {
   }
 
   // Handle Form Submit
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault()
     setGoogleNotice(null)
 
@@ -141,31 +143,68 @@ export default function Register() {
 
     setIsLoading(true)
 
-    // Simulate mock registration
-    setTimeout(() => {
-      setIsLoading(false)
-      setIsSuccess(true)
-
-      // Optionally save mock student data
-      try {
-        localStorage.setItem(
-          'campuslive_user',
-          JSON.stringify({
-            name: formData.fullName.trim(),
-            role: 'Student',
-            email: formData.email.trim(),
-            avatar: formData.fullName.trim().charAt(0).toUpperCase() || 'S',
-            studentId: formData.studentId.trim(),
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email.trim(),
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.fullName.trim(),
+            student_id: formData.studentId.trim(),
             department: formData.department,
             course: formData.course.trim(),
-            academicYear: formData.academicYear,
-            phone: formData.phone.trim(),
-          })
-        )
-      } catch {
-        // ignore
+            academic_year: formData.academicYear,
+            ...(formData.phone.trim() ? { phone: formData.phone.trim() } : {}),
+          },
+        },
+      })
+
+      if (error) {
+        setIsLoading(false)
+        const msg = error.message || 'Registration failed. Please try again.'
+        const lower = msg.toLowerCase()
+        const newErr = { general: msg }
+        if (lower.includes('email') || lower.includes('already') || lower.includes('user')) {
+          newErr.email = msg
+        } else if (lower.includes('password')) {
+          newErr.password = msg
+        }
+        setErrors(newErr)
+        return
       }
-    }, 700)
+
+      // Check if user already exists (Supabase obfuscates existing users when email confirmation is enabled)
+      if (data?.user?.identities && data.user.identities.length === 0) {
+        setIsLoading(false)
+        setErrors({
+          email: 'An account with this email address already exists. Please sign in.',
+          general: 'An account with this email address already exists. Please sign in.',
+        })
+        return
+      }
+
+      setIsLoading(false)
+
+      // Only navigate to dashboard if an active session confirms authentication
+      if (data?.session) {
+        navigate('/student/dashboard')
+      } else {
+        setNeedsEmailConfirmation(true)
+        setIsSuccess(true)
+      }
+    } catch (err) {
+      setIsLoading(false)
+      const isNet =
+        err?.message?.includes('fetch') ||
+        err?.message?.includes('Failed to fetch') ||
+        err?.name === 'TypeError'
+
+      setErrors({
+        general: isNet
+          ? 'Unable to reach the authentication server (Supabase project may be paused or offline). You can sign in immediately via Demo Mode.'
+          : err?.message || 'An unexpected error occurred during registration. Please try again.',
+      })
+    }
   }
 
   // Handle Google Sign Up
@@ -299,7 +338,9 @@ export default function Register() {
                     Account Created Successfully!
                   </h3>
                   <p className="text-xs text-emerald-700 leading-relaxed max-w-md mx-auto">
-                    Welcome to Campus Live, <span className="font-bold">{formData.fullName}</span>! Your student registration has been processed. You can now sign in to start exploring activities.
+                    {needsEmailConfirmation
+                      ? `Welcome to Campus Live, ${formData.fullName}! A verification link has been sent to ${formData.email}. Please verify your email before signing in.`
+                      : `Welcome to Campus Live, ${formData.fullName}! Your student registration has been processed. You can now sign in to start exploring activities.`}
                   </p>
                 </div>
                 <div className="pt-2">
@@ -315,6 +356,25 @@ export default function Register() {
               </div>
             ) : (
               <>
+                {/* General Error Banner */}
+                {errors.general && (
+                  <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2.5 animate-in fade-in duration-200">
+                    <IconAlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-rose-900">Registration Error:</p>
+                      <p className="mt-0.5 leading-relaxed">{errors.general}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setErrors((prev) => ({ ...prev, general: null }))}
+                      className="text-rose-500 hover:text-rose-700 cursor-pointer"
+                      aria-label="Dismiss error"
+                    >
+                      <span className="text-base font-bold leading-none">&times;</span>
+                    </button>
+                  </div>
+                )}
+
                 {/* Google Notice Banner if clicked */}
                 {googleNotice && (
                   <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-start gap-2.5 animate-in fade-in duration-200">

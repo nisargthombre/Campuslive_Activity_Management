@@ -9,24 +9,6 @@ export const studentStats = [
     helperText: '2 upcoming this week',
   },
   {
-    title: 'Clubs Joined',
-    value: '3',
-    iconType: 'clubs',
-    iconBg: 'bg-indigo-50 text-indigo-600',
-    change: 'Active',
-    changeType: 'neutral',
-    helperText: 'Coding, Robotics, Cultural',
-  },
-  {
-    title: 'Activities Participated',
-    value: '12',
-    iconType: 'activity',
-    iconBg: 'bg-emerald-50 text-emerald-600',
-    change: '+4 this semester',
-    changeType: 'positive',
-    helperText: 'Verified certificates earned',
-  },
-  {
     title: 'Upcoming Events',
     value: '6',
     iconType: 'calendar',
@@ -34,6 +16,24 @@ export const studentStats = [
     change: '2 this week',
     changeType: 'positive',
     helperText: 'Explore & register early',
+  },
+  {
+    title: 'Event Categories',
+    value: '4',
+    iconType: 'sparkles',
+    iconBg: 'bg-purple-50 text-purple-600',
+    change: 'Tracks',
+    changeType: 'neutral',
+    helperText: 'Workshops, hackathons & seminars',
+  },
+  {
+    title: 'Clubs Joined',
+    value: '3',
+    iconType: 'clubs',
+    iconBg: 'bg-indigo-50 text-indigo-600',
+    change: 'Demo Data',
+    changeType: 'neutral',
+    helperText: 'Campus club chapters (Demo)',
   },
 ]
 
@@ -89,7 +89,7 @@ export const myActivities = [
     category: 'Workshop',
     date: '15 September 2026',
     venue: 'Lab 3',
-    status: 'Attended',
+    status: 'Confirmed',
     statusVariant: 'success',
   },
   {
@@ -98,7 +98,7 @@ export const myActivities = [
     category: 'Competition',
     date: '10 September 2026',
     venue: 'Seminar Hall A',
-    status: 'Attended',
+    status: 'Confirmed',
     statusVariant: 'success',
   },
   {

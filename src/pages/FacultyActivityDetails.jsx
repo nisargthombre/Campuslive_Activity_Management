@@ -340,9 +340,11 @@ export default function FacultyActivityDetails() {
                   Eligible Departments
                 </span>
                 <p className="text-slate-800 font-bold">
-                  {typeof activity.eligibility === 'object'
-                    ? activity.eligibility.departments || 'Open to All Departments'
-                    : activity.eligibility}
+                  {typeof activity.eligibility === 'object' && activity.eligibility !== null
+                    ? Array.isArray(activity.eligibility.departments)
+                      ? activity.eligibility.departments.join(', ')
+                      : activity.eligibility.departments || 'Open to All Departments'
+                    : activity.eligibility || 'Open to All Departments'}
                 </p>
               </div>
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import StudentLayout from '../layouts/StudentLayout'
 import PageHeader from '../components/common/PageHeader'
 import StatCard from '../components/common/StatCard'
@@ -10,6 +10,7 @@ import Input from '../components/common/Input'
 import Select from '../components/common/Select'
 import Textarea from '../components/common/Textarea'
 import EmptyState from '../components/common/EmptyState'
+import LoadingState from '../components/common/LoadingState'
 import {
   IconSupport,
   IconPlus,
@@ -23,27 +24,114 @@ import {
   supportCategories,
   supportPriorities,
   supportStatuses,
-  initialTickets,
   getStoredSupportTickets,
   saveStoredSupportTickets,
   SUPPORT_EVENT_KEY,
 } from '../data/supportData'
+import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 export default function StudentSupport() {
-  // Tickets state connected to unified support store
-  const [tickets, setTickets] = useState(() => getStoredSupportTickets())
+  const { user, profile } = useAuth()
+
+  // Tickets state
+  const [tickets, setTickets] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [dataSource, setDataSource] = useState('demo')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isSubmittingReply, setIsSubmittingReply] = useState(false)
+
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
 
-  // Listen for Super Admin / Faculty updates in real-time
+  // Modals state
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [selectedTicket, setSelectedTicket] = useState(null)
+  const [replyText, setReplyText] = useState('')
+  const [toast, setToast] = useState(null)
+  const [reloadToken, setReloadToken] = useState(0)
+
+  const refreshTickets = useCallback(() => {
+    setIsLoading(true)
+    setError(null)
+    setReloadToken((k) => k + 1)
+  }, [])
+
+  // Fetch tickets from Express backend with offline/demo fallback
+  useEffect(() => {
+    let ignore = false
+
+    const loadTickets = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        const token = session?.access_token
+        const headers = {}
+        if (token) {
+          headers.Authorization = `Bearer ${token}`
+        }
+
+        const res = await fetch(`${API_BASE_URL}/api/support/tickets`, {
+          method: 'GET',
+          headers,
+        })
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}))
+          throw new Error(errData.message || `Server returned status ${res.status}`)
+        }
+
+        const resData = await res.json()
+        if (Array.isArray(resData.tickets)) {
+          if (!ignore) {
+            setTickets(resData.tickets)
+            setDataSource(resData.source || (resData.isDemo ? 'demo' : 'live'))
+            setError(null)
+          }
+        } else {
+          const fallback = getStoredSupportTickets()
+          if (!ignore) {
+            setTickets(fallback)
+            setDataSource('demo')
+          }
+        }
+      } catch (err) {
+        console.warn('[StudentSupport] Live fetch note, falling back to local dataset:', err.message || err)
+        const fallback = getStoredSupportTickets()
+        if (!ignore) {
+          setTickets(fallback)
+          setDataSource('demo')
+          setError('Backend support service is currently unreachable. Operating in offline demo fallback mode.')
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    loadTickets()
+    return () => {
+      ignore = true
+    }
+  }, [reloadToken])
+
+  // Listen for Super Admin / Faculty updates in real-time if in demo mode
   useEffect(() => {
     const handleSync = () => {
-      const fresh = getStoredSupportTickets()
-      setTickets(fresh)
-      setSelectedTicket((prev) => {
-        if (!prev) return null
-        return fresh.find((t) => t.id === prev.id) || prev
-      })
+      if (dataSource === 'demo') {
+        const fresh = getStoredSupportTickets()
+        setTickets(fresh)
+        setSelectedTicket((prev) => {
+          if (!prev) return null
+          return fresh.find((t) => t.id === prev.id) || prev
+        })
+      }
     }
     window.addEventListener(SUPPORT_EVENT_KEY, handleSync)
     window.addEventListener('storage', handleSync)
@@ -51,13 +139,7 @@ export default function StudentSupport() {
       window.removeEventListener(SUPPORT_EVENT_KEY, handleSync)
       window.removeEventListener('storage', handleSync)
     }
-  }, [])
-
-  // Modals state
-  const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [selectedTicket, setSelectedTicket] = useState(null)
-  const [replyText, setReplyText] = useState('')
-  const [toast, setToast] = useState(null)
+  }, [dataSource])
 
   // Create Ticket Form State
   const [newTicketCategory, setNewTicketCategory] = useState(supportCategories[0])
@@ -73,6 +155,15 @@ export default function StudentSupport() {
     setTimeout(() => {
       setToast((prev) => (prev?.message === message ? null : prev))
     }, 4000)
+  }
+
+  const resetForm = () => {
+    setNewTicketSubject('')
+    setNewTicketDescription('')
+    setNewTicketCategory(supportCategories[0])
+    setNewTicketPriority('Medium')
+    setNewTicketAttachment('')
+    setFormError('')
   }
 
   // Summary counts
@@ -108,8 +199,9 @@ export default function StudentSupport() {
       // Search query (matches ticketNumber, subject, category)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
+        const tNum = ticket.ticketNumber || ticket.id || ''
         const matches =
-          ticket.ticketNumber.toLowerCase().includes(q) ||
+          tNum.toLowerCase().includes(q) ||
           ticket.subject.toLowerCase().includes(q) ||
           ticket.category.toLowerCase().includes(q)
         if (!matches) return false
@@ -122,8 +214,9 @@ export default function StudentSupport() {
   // Priority badge config
   const getPriorityBadge = (priority) => {
     switch (priority?.toLowerCase()) {
+      case 'urgent':
       case 'high':
-        return <Badge variant="danger" size="sm">High</Badge>
+        return <Badge variant="danger" size="sm">{priority || 'High'}</Badge>
       case 'medium':
         return <Badge variant="warning" size="sm">Medium</Badge>
       case 'low':
@@ -150,8 +243,8 @@ export default function StudentSupport() {
   }
 
   // Handle Create Ticket Submit
-  const handleCreateSubmit = (e) => {
-    e.preventDefault()
+  const handleCreateSubmit = async (e) => {
+    if (e) e.preventDefault()
     if (!newTicketSubject.trim()) {
       setFormError('Please enter a ticket subject.')
       return
@@ -161,112 +254,260 @@ export default function StudentSupport() {
       return
     }
 
-    const now = new Date()
-    const dateString = now.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    }) + `, ` + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-
-    const nextIdNum = 426 + tickets.length
-    const newTicketId = `TICK-2026-0${nextIdNum}`
-
-    const newTicket = {
-      id: newTicketId,
-      ticketNumber: newTicketId,
-      origin: 'student',
-      subject: newTicketSubject.trim(),
-      category: newTicketCategory,
-      priority: newTicketPriority,
-      status: 'Open',
-      createdDate: dateString,
-      lastUpdated: dateString,
-      description: newTicketDescription.trim(),
-      attachmentName: newTicketAttachment.trim() || null,
-      creator: {
-        name: 'Alex Rivera',
-        role: 'Student',
-        email: 'alex.rivera@campus.edu',
-        department: 'Computer Science',
-        studentId: 'STU-2024-001',
-      },
-      messages: [
-        {
-          id: `msg-${Date.now()}`,
-          senderName: 'You (Alex Rivera)',
-          senderRole: 'Student',
-          role: 'Student',
-          avatar: 'AR',
-          text: newTicketDescription.trim(),
-          message: newTicketDescription.trim(),
-          timestamp: dateString,
-          time: dateString,
-          isStaff: false,
-        },
-      ],
-    }
-
-    const updated = [newTicket, ...tickets]
-    setTickets(updated)
-    saveStoredSupportTickets(updated)
-    setIsCreateOpen(false)
-
-    // Reset form fields
-    setNewTicketSubject('')
-    setNewTicketDescription('')
-    setNewTicketCategory(supportCategories[0])
-    setNewTicketPriority('Medium')
-    setNewTicketAttachment('')
+    setIsSubmitting(true)
     setFormError('')
 
-    showToast(`Support ticket ${newTicketId} created successfully!`, 'success')
+    const studentName =
+      profile?.full_name ||
+      profile?.fullName ||
+      user?.user_metadata?.full_name ||
+      user?.name ||
+      (user?.email ? user.email.split('@')[0] : 'Student')
+    const studentEmail = user?.email || profile?.email || 'student@campus.edu'
+    const studentDept = profile?.department || 'General'
+    const studentIdStr = profile?.student_id || profile?.studentId || 'STU-2026'
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      const token = session?.access_token
+
+      if (token) {
+        const res = await fetch(`${API_BASE_URL}/api/support/tickets`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            subject: newTicketSubject.trim(),
+            description: newTicketDescription.trim(),
+            category: newTicketCategory,
+            priority: newTicketPriority,
+            attachmentName: newTicketAttachment.trim() || null,
+          }),
+        })
+
+        const resData = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(resData.message || 'Failed to create ticket on server.')
+        }
+
+        if (resData.ticket) {
+          setTickets((prev) => [resData.ticket, ...prev])
+        } else {
+          refreshTickets()
+        }
+
+        setIsCreateOpen(false)
+        resetForm()
+        showToast(resData.message || 'Support ticket created successfully!', 'success')
+      } else {
+        // Safe offline / demo fallback
+        const now = new Date()
+        const dateString =
+          now.toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          }) +
+          `, ` +
+          now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+        const nextIdNum = 426 + tickets.length
+        const newTicketId = `TICK-2026-0${nextIdNum}`
+        const avatarInitials =
+          studentName
+            .split(' ')
+            .map((w) => w[0])
+            .join('')
+            .slice(0, 2)
+            .toUpperCase() || 'ST'
+
+        const newTicket = {
+          id: newTicketId,
+          ticketNumber: newTicketId,
+          origin: 'student',
+          subject: newTicketSubject.trim(),
+          category: newTicketCategory,
+          priority: newTicketPriority,
+          status: 'Open',
+          createdDate: dateString,
+          lastUpdated: dateString,
+          description: newTicketDescription.trim(),
+          attachmentName: newTicketAttachment.trim() || null,
+          creator: {
+            name: studentName,
+            role: 'Student',
+            email: studentEmail,
+            department: studentDept,
+            studentId: studentIdStr,
+          },
+          messages: [
+            {
+              id: `msg-${Date.now()}`,
+              senderName: `You (${studentName})`,
+              senderRole: 'Student',
+              role: 'Student',
+              avatar: avatarInitials,
+              text: newTicketDescription.trim(),
+              message: newTicketDescription.trim(),
+              timestamp: dateString,
+              time: dateString,
+              isStaff: false,
+            },
+          ],
+        }
+
+        const updated = [newTicket, ...tickets]
+        setTickets(updated)
+        saveStoredSupportTickets(updated)
+        setIsCreateOpen(false)
+        resetForm()
+        showToast(`Support ticket ${newTicketId} created successfully (Demo Mode).`, 'success')
+      }
+    } catch (err) {
+      console.error('[StudentSupport] Create ticket error:', err)
+      setFormError(err.message || 'Failed to create support ticket. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   // Handle Send Reply in Ticket Details
-  const handleSendReply = () => {
-    if (!replyText.trim() || !selectedTicket) return
+  const handleSendReply = async () => {
+    if (!replyText.trim() || !selectedTicket || isSubmittingReply) return
 
-    const now = new Date()
-    const timestamp = now.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    }) + `, ` + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    setIsSubmittingReply(true)
+    const cleanMsg = replyText.trim()
+    const studentName =
+      profile?.full_name ||
+      profile?.fullName ||
+      user?.user_metadata?.full_name ||
+      user?.name ||
+      (user?.email ? user.email.split('@')[0] : 'Student')
 
-    const newMsg = {
-      id: `msg-${Date.now()}`,
-      senderName: 'You (Alex Rivera)',
-      senderRole: 'Student',
-      role: 'Student',
-      avatar: 'AR',
-      text: replyText.trim(),
-      message: replyText.trim(),
-      timestamp,
-      time: timestamp,
-      isStaff: false,
-    }
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-    const updatedTickets = tickets.map((t) => {
-      if (t.id === selectedTicket.id) {
-        return {
-          ...t,
-          lastUpdated: timestamp,
-          messages: [...(t.messages || []), newMsg],
+      const token = session?.access_token
+
+      if (token) {
+        const res = await fetch(
+          `${API_BASE_URL}/api/support/tickets/${selectedTicket.id}/messages`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ message: cleanMsg }),
+          }
+        )
+
+        const resData = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(resData.message || 'Failed to send reply to server.')
         }
+
+        if (resData.ticket) {
+          setSelectedTicket(resData.ticket)
+          setTickets((prev) =>
+            prev.map((t) => (t.id === resData.ticket.id ? resData.ticket : t))
+          )
+        } else if (resData.ticketMessage) {
+          const avatarInitials =
+            studentName
+              .split(' ')
+              .map((w) => w[0])
+              .join('')
+              .slice(0, 2)
+              .toUpperCase() || 'ST'
+
+          const formattedMsg = {
+            id: resData.ticketMessage.id,
+            senderName: studentName,
+            senderRole: 'Student',
+            role: 'Student',
+            avatar: avatarInitials,
+            text: cleanMsg,
+            message: cleanMsg,
+            timestamp: 'Just now',
+            isStaff: false,
+          }
+          setSelectedTicket((prev) => ({
+            ...prev,
+            messages: [...(prev.messages || []), formattedMsg],
+          }))
+        }
+
+        setReplyText('')
+        showToast(resData.message || 'Your reply has been submitted.', 'success')
+      } else {
+        // Safe offline / demo fallback
+        const now = new Date()
+        const timestamp =
+          now.toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          }) +
+          `, ` +
+          now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+        const avatarInitials =
+          studentName
+            .split(' ')
+            .map((w) => w[0])
+            .join('')
+            .slice(0, 2)
+            .toUpperCase() || 'ST'
+
+        const newMsg = {
+          id: `msg-${Date.now()}`,
+          senderName: `You (${studentName})`,
+          senderRole: 'Student',
+          role: 'Student',
+          avatar: avatarInitials,
+          text: cleanMsg,
+          message: cleanMsg,
+          timestamp,
+          time: timestamp,
+          isStaff: false,
+        }
+
+        const updatedTickets = tickets.map((t) => {
+          if (t.id === selectedTicket.id) {
+            return {
+              ...t,
+              lastUpdated: timestamp,
+              messages: [...(t.messages || []), newMsg],
+            }
+          }
+          return t
+        })
+
+        setTickets(updatedTickets)
+        saveStoredSupportTickets(updatedTickets)
+        setSelectedTicket((prev) => ({
+          ...prev,
+          lastUpdated: timestamp,
+          messages: [...(prev.messages || []), newMsg],
+        }))
+
+        setReplyText('')
+        showToast('Your reply has been submitted (Demo Mode).', 'success')
       }
-      return t
-    })
-
-    setTickets(updatedTickets)
-    saveStoredSupportTickets(updatedTickets)
-    setSelectedTicket((prev) => ({
-      ...prev,
-      lastUpdated: timestamp,
-      messages: [...(prev.messages || []), newMsg],
-    }))
-
-    setReplyText('')
-    showToast('Your reply has been submitted.', 'success')
+    } catch (err) {
+      console.error('[StudentSupport] Reply error:', err)
+      showToast(err.message || 'Failed to submit reply.', 'danger')
+    } finally {
+      setIsSubmittingReply(false)
+    }
   }
 
   return (
@@ -280,7 +521,7 @@ export default function StudentSupport() {
                 ? 'bg-emerald-500'
                 : toast.type === 'info'
                 ? 'bg-blue-500'
-                : 'bg-amber-500'
+                : 'bg-rose-500'
             }`}
           />
           <span>{toast.message}</span>
@@ -304,17 +545,42 @@ export default function StudentSupport() {
           { label: 'Support' },
         ]}
         actions={
-          <Button
-            variant="primary"
-            size="md"
-            onClick={() => setIsCreateOpen(true)}
-            className="shadow-xs gap-1.5"
-            icon={<IconPlus className="w-4 h-4" />}
-          >
-            Create Support Ticket
-          </Button>
+          <div className="flex items-center gap-2">
+            {dataSource === 'demo' && (
+              <Badge variant="warning" size="md" className="py-1 px-3 shadow-2xs font-medium">
+                Offline Demo Mode
+              </Badge>
+            )}
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setIsCreateOpen(true)}
+              className="shadow-xs gap-1.5"
+              icon={<IconPlus className="w-4 h-4" />}
+            >
+              Create Support Ticket
+            </Button>
+          </div>
         }
       />
+
+      {/* Error Retry Banner */}
+      {error && (
+        <div className="mb-6 p-4 rounded-xl border border-amber-200 bg-amber-50 flex items-center justify-between gap-3 text-amber-800 text-xs">
+          <div className="flex items-center gap-2">
+            <IconAlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refreshTickets()}
+            className="text-xs text-amber-800 border-amber-300 hover:bg-amber-100"
+          >
+            Retry Connection
+          </Button>
+        </div>
+      )}
 
       {/* Ticket Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -427,8 +693,12 @@ export default function StudentSupport() {
         </div>
       </div>
 
-      {/* Tickets List */}
-      {filteredTickets.length > 0 ? (
+      {/* Loading State or Tickets List */}
+      {isLoading && tickets.length === 0 ? (
+        <div className="py-12">
+          <LoadingState message="Loading support tickets..." />
+        </div>
+      ) : filteredTickets.length > 0 ? (
         <div className="space-y-3">
           {filteredTickets.map((ticket) => (
             <div
@@ -439,7 +709,7 @@ export default function StudentSupport() {
                 {/* Header tags: Ticket Number, Category, Status, Priority */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                    {ticket.ticketNumber}
+                    {ticket.ticketNumber || ticket.id}
                   </span>
                   <Badge variant="neutral" size="sm">
                     {ticket.category}
@@ -491,7 +761,7 @@ export default function StudentSupport() {
           description={
             searchQuery || statusFilter !== 'All'
               ? 'No tickets match your search or status filter. Try clearing the filter or search query.'
-              : 'You have not submitted any support tickets yet. Need assistance with an activity or your account?'
+              : 'You have not submitted any support tickets yet. Need assistance with an activity, club, or account?'
           }
           actionLabel={
             searchQuery || statusFilter !== 'All' ? 'Clear Filters' : 'Create Support Ticket'
@@ -526,11 +796,17 @@ export default function StudentSupport() {
                   setIsCreateOpen(false)
                   setFormError('')
                 }}
+                disabled={isSubmitting}
               >
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" onClick={handleCreateSubmit}>
-                Submit Ticket
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleCreateSubmit}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Submitting...' : 'Submit Ticket'}
               </Button>
             </div>
           }
@@ -606,7 +882,7 @@ export default function StudentSupport() {
             setSelectedTicket(null)
             setReplyText('')
           }}
-          title={selectedTicket.ticketNumber}
+          title={selectedTicket.ticketNumber || selectedTicket.id}
           size="lg"
           footer={
             <div className="w-full flex items-center justify-between">
@@ -694,10 +970,10 @@ export default function StudentSupport() {
                           </Badge>
                         )}
                       </div>
-                      <span className="text-[10px] text-slate-400">{msg.timestamp}</span>
+                      <span className="text-[10px] text-slate-400">{msg.timestamp || msg.time}</span>
                     </div>
 
-                    <p className="text-slate-700 pl-8">{msg.text}</p>
+                    <p className="text-slate-700 pl-8">{msg.text || msg.message}</p>
                   </div>
                 ))}
               </div>
@@ -710,20 +986,25 @@ export default function StudentSupport() {
               </label>
               <textarea
                 rows={3}
-                placeholder="Type your reply message here..."
+                placeholder={
+                  selectedTicket.status === 'Closed'
+                    ? 'This ticket is closed and cannot receive replies.'
+                    : 'Type your reply message here...'
+                }
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 text-xs p-3 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+                disabled={selectedTicket.status === 'Closed' || isSubmittingReply}
+                className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 text-xs p-3 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
               />
               <div className="flex items-center justify-end">
                 <Button
                   variant="primary"
                   size="sm"
                   onClick={handleSendReply}
-                  disabled={!replyText.trim()}
+                  disabled={!replyText.trim() || selectedTicket.status === 'Closed' || isSubmittingReply}
                   className="text-xs"
                 >
-                  Send Reply
+                  {isSubmittingReply ? 'Sending...' : 'Send Reply'}
                 </Button>
               </div>
             </div>

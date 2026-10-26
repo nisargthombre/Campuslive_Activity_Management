@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 import StudentLayout from '../layouts/StudentLayout'
 import PageHeader from '../components/common/PageHeader'
 import Badge from '../components/common/Badge'
@@ -19,8 +21,11 @@ import {
   IconChevronRight,
 } from '../components/icons/Icons'
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+
 export default function StudentSettings() {
   const navigate = useNavigate()
+  const { user, profile, isDemo, signOut } = useAuth()
 
   // Toast state
   const [toast, setToast] = useState(null)
@@ -31,6 +36,9 @@ export default function StudentSettings() {
     }, 4000)
   }
 
+  // Storage synchronization badge state: 'database' | 'local' | 'loading'
+  const [storageMode, setStorageMode] = useState('loading')
+
   // 1. Notification Preferences state
   const [notifPrefs, setNotifPrefs] = useState({
     activityAlerts: true,
@@ -39,14 +47,6 @@ export default function StudentSettings() {
     campusAdvisories: true,
     emailDigest: false,
   })
-
-  const toggleNotifPref = (key) => {
-    setNotifPrefs((prev) => {
-      const next = { ...prev, [key]: !prev[key] }
-      showToast('Notification preference updated.', 'info')
-      return next
-    })
-  }
 
   // 2. Appearance Preference state
   const [themePreference, setThemePreference] = useState('light')
@@ -61,11 +61,264 @@ export default function StudentSettings() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState('')
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
 
-  const handlePasswordSubmit = (e) => {
+  // 5. Saving Preferences state
+  const [isSavingPrefs, setIsSavingPrefs] = useState(false)
+
+  // Profile data resolution (graceful fallback without assuming optional database columns)
+  const studentName =
+    profile?.fullName || profile?.full_name || user?.user_metadata?.full_name || 'Student'
+  const studentId =
+    profile?.studentId || profile?.student_id || (profile?.staffId ? profile.staffId : 'CL-2024-8842')
+  const studentEmail = profile?.email || user?.email || 'student@campus.edu'
+  const department = profile?.department || 'Computer Science & Engineering'
+  const course = profile?.course || 'B.Tech in Computer Engineering'
+  const academicYear = profile?.academicYear || profile?.academic_year || '3rd Year'
+  const academicProgram =
+    course && academicYear ? `${course} (${academicYear})` : course || academicYear || 'B.Tech in Computer Engineering (3rd Year)'
+  const avatarInitial = (studentName.trim().charAt(0) || 'S').toUpperCase()
+  const profileImage = profile?.profileImage || profile?.profile_image
+
+  /**
+   * Loads preferences from backend API or local storage fallback on mount / identity change.
+   */
+  useEffect(() => {
+    let ignore = false
+
+    async function initializePreferences() {
+      // A. Demo mode: read from local browser storage
+      if (isDemo || user?.isDemo) {
+        try {
+          const local = localStorage.getItem('campuslive_student_prefs_demo')
+          if (local) {
+            const parsed = JSON.parse(local)
+            if (!ignore) {
+              if (parsed.notifications) {
+                setNotifPrefs((prev) => ({ ...prev, ...parsed.notifications }))
+              }
+              if (parsed.appearance?.theme) {
+                setThemePreference(parsed.appearance.theme)
+              }
+              if (parsed.appearance?.density) {
+                setInterfaceDensity(parsed.appearance.density)
+              }
+              if (parsed.security?.twoFactorEnabled !== undefined) {
+                setTwoFactorEnabled(parsed.security.twoFactorEnabled)
+              }
+            }
+          }
+        } catch {
+          // Safe fallback
+        }
+        if (!ignore) setStorageMode('local')
+        return
+      }
+
+      // B. Authenticated mode: Query Express backend /api/profile/preferences
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        const token = session?.access_token
+
+        if (token) {
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 4000)
+
+          const res = await fetch(`${API_BASE_URL}/api/profile/preferences`, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            signal: controller.signal,
+          })
+          clearTimeout(timeoutId)
+
+          if (res.ok && !ignore) {
+            const json = await res.json()
+            if (json.preferences) {
+              if (json.preferences.notifications) {
+                setNotifPrefs((prev) => ({ ...prev, ...json.preferences.notifications }))
+              }
+              if (json.preferences.appearance?.theme) {
+                setThemePreference(json.preferences.appearance.theme)
+              }
+              if (json.preferences.appearance?.density) {
+                setInterfaceDensity(json.preferences.appearance.density)
+              }
+              if (json.preferences.security?.twoFactorEnabled !== undefined) {
+                setTwoFactorEnabled(json.preferences.security.twoFactorEnabled)
+              }
+
+              setStorageMode(json.storage === 'database' ? 'database' : 'local')
+              return
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[StudentSettings] Notice: Using local preferences fallback:', err.message || err)
+      }
+
+      // C. Offline / local fallback for authenticated user
+      if (!ignore) {
+        try {
+          const userKey = `campuslive_student_prefs_${user?.id || 'default'}`
+          const local = localStorage.getItem(userKey)
+          if (local) {
+            const parsed = JSON.parse(local)
+            if (parsed.notifications) {
+              setNotifPrefs((prev) => ({ ...prev, ...parsed.notifications }))
+            }
+            if (parsed.appearance?.theme) {
+              setThemePreference(parsed.appearance.theme)
+            }
+            if (parsed.appearance?.density) {
+              setInterfaceDensity(parsed.appearance.density)
+            }
+            if (parsed.security?.twoFactorEnabled !== undefined) {
+              setTwoFactorEnabled(parsed.security.twoFactorEnabled)
+            }
+          }
+        } catch {
+          // Safe fallback
+        }
+        setStorageMode('local')
+      }
+    }
+
+    initializePreferences()
+
+    return () => {
+      ignore = true
+    }
+  }, [isDemo, user])
+
+  /**
+   * Persists preferences to backend API or local storage.
+   */
+  const handleSavePreferences = async (customNotifs = null, customAppearance = null, customSecurity = null) => {
+    setIsSavingPrefs(true)
+    const payload = {
+      notifications: customNotifs || notifPrefs,
+      appearance: customAppearance || { theme: themePreference, density: interfaceDensity },
+      security: customSecurity !== null ? customSecurity : { twoFactorEnabled },
+    }
+
+    // 1. Demo mode: strictly localStorage
+    if (isDemo || user?.isDemo) {
+      try {
+        localStorage.setItem('campuslive_student_prefs_demo', JSON.stringify(payload))
+      } catch {
+        // ignore
+      }
+      setStorageMode('local')
+      setIsSavingPrefs(false)
+      showToast('Preferences saved locally in browser (Demo mode).', 'info')
+      return
+    }
+
+    // 2. Authenticated user: Send to /api/profile/preferences
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      if (!token) {
+        const userKey = `campuslive_student_prefs_${user?.id || 'default'}`
+        localStorage.setItem(userKey, JSON.stringify(payload))
+        setStorageMode('local')
+        setIsSavingPrefs(false)
+        showToast('Preferences saved locally in browser storage.', 'info')
+        return
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/profile/preferences`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        throw new Error(`HTTP error ${res.status}`)
+      }
+
+      const json = await res.json()
+      if (json.storage === 'database') {
+        setStorageMode('database')
+        showToast('Preferences successfully saved and synced to database.', 'success')
+      } else {
+        // Fallback store active on server (database migration pending)
+        const userKey = `campuslive_student_prefs_${user?.id || 'default'}`
+        localStorage.setItem(userKey, JSON.stringify(payload))
+        setStorageMode('local')
+        showToast('Preferences saved locally (remote database migration pending).', 'info')
+      }
+    } catch (err) {
+      console.warn('[StudentSettings] Error persisting preferences remotely:', err)
+      // Resilient local persistence
+      try {
+        const userKey = `campuslive_student_prefs_${user?.id || 'default'}`
+        localStorage.setItem(userKey, JSON.stringify(payload))
+      } catch {
+        // ignore
+      }
+      setStorageMode('local')
+      showToast('Preferences saved locally to browser storage.', 'info')
+    } finally {
+      setIsSavingPrefs(false)
+    }
+  }
+
+  // Toggle individual notification preferences
+  const toggleNotifPref = (key) => {
+    const next = { ...notifPrefs, [key]: !notifPrefs[key] }
+    setNotifPrefs(next)
+    handleSavePreferences(next)
+  }
+
+  // Handle Appearance Theme selection
+  const handleThemeChange = (theme) => {
+    if (theme === 'dark') {
+      showToast('Dark Theme is coming in the next release.', 'info')
+      return
+    }
+    setThemePreference(theme)
+    handleSavePreferences(null, { theme, density: interfaceDensity })
+    showToast(`Theme set to ${theme === 'light' ? 'Light Mode' : 'System Default'}.`, 'info')
+  }
+
+  // Handle Appearance Density selection
+  const handleDensityChange = (density) => {
+    setInterfaceDensity(density)
+    handleSavePreferences(null, { theme: themePreference, density })
+    showToast(`Layout density set to ${density === 'comfortable' ? 'Comfortable' : 'Compact'}.`, 'info')
+  }
+
+  // Handle Two-Factor switch toggle
+  const toggle2FA = () => {
+    const next = !twoFactorEnabled
+    setTwoFactorEnabled(next)
+    handleSavePreferences(null, null, { twoFactorEnabled: next })
+    showToast(
+      next ? 'Two-step verification preference enabled.' : 'Two-step verification preference disabled.',
+      'info'
+    )
+  }
+
+  // Handle Real Supabase Auth Password Change
+  const handlePasswordSubmit = async (e) => {
     e.preventDefault()
     setPasswordError('')
+    setPasswordSuccess('')
 
+    // 1. Client-side input validations
     if (!currentPassword.trim()) {
       setPasswordError('Please enter your current password.')
       return
@@ -78,22 +331,65 @@ export default function StudentSettings() {
       setPasswordError('New passwords do not match. Please verify.')
       return
     }
+    if (currentPassword === newPassword) {
+      setPasswordError('New password must be different from your current password.')
+      return
+    }
 
-    // Success mock update
-    setCurrentPassword('')
-    setNewPassword('')
-    setConfirmPassword('')
-    showToast('Password updated successfully!', 'success')
+    // 2. Demo mode & unauthenticated safety guard
+    if (isDemo || user?.isDemo || !user?.email) {
+      setPasswordError(
+        'Password changes are disabled in demo/offline mode. Please log in with a registered account.'
+      )
+      return
+    }
+
+    setIsUpdatingPassword(true)
+
+    try {
+      // Step A: Re-authenticate to verify current password credentials
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      })
+
+      if (signInError) {
+        setPasswordError('Current password is incorrect. Please verify your credentials and try again.')
+        setIsUpdatingPassword(false)
+        return
+      }
+
+      // Step B: Authenticated password update
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      })
+
+      if (updateError) {
+        setPasswordError(updateError.message || 'Failed to update password. Please try again.')
+        setIsUpdatingPassword(false)
+        return
+      }
+
+      // Step C: Success handling
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setPasswordSuccess('Password updated successfully via Supabase Auth!')
+      showToast('Password updated successfully via Supabase Auth!', 'success')
+    } catch (err) {
+      console.error('[StudentSettings] Exception updating password:', err)
+      setPasswordError('An unexpected network error occurred while updating password. Please try again.')
+    } finally {
+      setIsUpdatingPassword(false)
+    }
   }
 
-  // 5. Logout Handler
-  const handleLogout = () => {
+  // 6. Sign Out Handler
+  const handleLogout = async () => {
     try {
-      localStorage.removeItem('campuslive_user')
-      localStorage.removeItem('campuslive_auth_session')
-      sessionStorage.clear()
-    } catch {
-      // ignore
+      await signOut()
+    } catch (err) {
+      console.error('[StudentSettings] Error signing out:', err)
     }
     navigate('/login')
   }
@@ -165,20 +461,31 @@ export default function StudentSettings() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4 bg-slate-50/70 p-4 rounded-xl border border-slate-100">
-                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-bold text-lg flex items-center justify-center ring-4 ring-white shadow-xs shrink-0">
-                    N
-                  </div>
+                  {profileImage ? (
+                    <img
+                      src={profileImage}
+                      alt={studentName}
+                      className="w-14 h-14 rounded-full object-cover ring-4 ring-white shadow-xs shrink-0"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-bold text-lg flex items-center justify-center ring-4 ring-white shadow-xs shrink-0">
+                      {avatarInitial}
+                    </div>
+                  )}
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-slate-900 text-base">Nisarg</span>
+                      <span className="font-bold text-slate-900 text-base">{studentName}</span>
                       <Badge variant="primary" size="sm">
-                        Student
+                        {profile?.role ? profile.role.toUpperCase() : 'STUDENT'}
                       </Badge>
-                      <span className="text-xs font-medium text-slate-400">ID: CL-2024-8842</span>
+                      <span className="text-xs font-medium text-slate-400">
+                        ID: {studentId}
+                      </span>
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-slate-600 mt-1">
                       <IconMail className="w-3.5 h-3.5 text-slate-400" />
-                      <span>nisarg@campus.edu</span>
+                      <span>{studentEmail}</span>
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60 ml-1">
                         <IconCheck className="w-2.5 h-2.5" />
                         Verified Institutional Email
@@ -191,13 +498,13 @@ export default function StudentSettings() {
                   <div className="p-3 bg-white rounded-lg border border-slate-100 space-y-1">
                     <span className="text-slate-400 block font-medium">Department</span>
                     <span className="font-semibold text-slate-800">
-                      Computer Science & Engineering
+                      {department}
                     </span>
                   </div>
                   <div className="p-3 bg-white rounded-lg border border-slate-100 space-y-1">
                     <span className="text-slate-400 block font-medium">Academic Program</span>
                     <span className="font-semibold text-slate-800">
-                      B.Tech in Computer Engineering (3rd Year)
+                      {academicProgram}
                     </span>
                   </div>
                 </div>
@@ -207,17 +514,40 @@ export default function StudentSettings() {
             {/* 2. Notification Preferences */}
             <Card>
               <div className="p-5 sm:p-6 space-y-5">
-                <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                  <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100">
-                    <IconBell className="w-5 h-5" />
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100">
+                      <IconBell className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900 leading-tight">
+                        Notification Preferences
+                      </h2>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Control which notifications you receive across the Campus Live portal.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-base font-bold text-slate-900 leading-tight">
-                      Notification Preferences
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Control which notifications you receive across the Campus Live portal.
-                    </p>
+
+                  {/* Storage Persistence Indicator */}
+                  <div className="flex items-center gap-2">
+                    {storageMode === 'database' ? (
+                      <span
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200"
+                        title="Preferences are synced to your database profile record"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Database Synced
+                      </span>
+                    ) : (
+                      <span
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200"
+                        title="Preferences are saved to local browser storage"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                        {isDemo ? 'Local Storage (Demo Mode)' : 'Local Storage (Migration Pending)'}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -253,10 +583,10 @@ export default function StudentSettings() {
                   <div className="py-3.5 flex items-center justify-between gap-4">
                     <div className="space-y-0.5">
                       <p className="text-sm font-semibold text-slate-800">
-                        Registration & Attendance Confirmations
+                        Registration & Booking Confirmations
                       </p>
                       <p className="text-xs text-slate-500">
-                        Instant notifications for seat approvals, venue updates, and participation check-ins.
+                        Instant notifications for seat approvals, venue updates, and schedule changes.
                       </p>
                     </div>
                     <button
@@ -362,9 +692,10 @@ export default function StudentSettings() {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => showToast('All notification preferences saved.', 'success')}
+                    disabled={isSavingPrefs}
+                    onClick={() => handleSavePreferences()}
                   >
-                    Save Notification Preferences
+                    {isSavingPrefs ? 'Saving Preferences...' : 'Save Notification Preferences'}
                   </Button>
                 </div>
               </div>
@@ -396,10 +727,7 @@ export default function StudentSettings() {
                     {/* Light Theme */}
                     <button
                       type="button"
-                      onClick={() => {
-                        setThemePreference('light')
-                        showToast('Theme set to Light Mode.', 'info')
-                      }}
+                      onClick={() => handleThemeChange('light')}
                       className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between h-24 ${
                         themePreference === 'light'
                           ? 'border-blue-600 bg-blue-50/40 ring-2 ring-blue-500/20'
@@ -425,9 +753,7 @@ export default function StudentSettings() {
                     {/* Dark Theme */}
                     <button
                       type="button"
-                      onClick={() => {
-                        showToast('Dark Theme is coming in the next release.', 'info')
-                      }}
+                      onClick={() => handleThemeChange('dark')}
                       className="p-3.5 rounded-xl border border-slate-200 hover:border-slate-300 bg-slate-900 text-white text-left transition-all cursor-pointer flex flex-col justify-between h-24 opacity-85 hover:opacity-100"
                     >
                       <div className="flex items-center justify-between">
@@ -449,10 +775,7 @@ export default function StudentSettings() {
                     {/* System Theme */}
                     <button
                       type="button"
-                      onClick={() => {
-                        setThemePreference('system')
-                        showToast('Theme set to System Default.', 'info')
-                      }}
+                      onClick={() => handleThemeChange('system')}
                       className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between h-24 ${
                         themePreference === 'system'
                           ? 'border-blue-600 bg-blue-50/40 ring-2 ring-blue-500/20'
@@ -485,7 +808,7 @@ export default function StudentSettings() {
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => setInterfaceDensity('comfortable')}
+                      onClick={() => handleDensityChange('comfortable')}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
                         interfaceDensity === 'comfortable'
                           ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold'
@@ -496,7 +819,7 @@ export default function StudentSettings() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setInterfaceDensity('compact')}
+                      onClick={() => handleDensityChange('compact')}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
                         interfaceDensity === 'compact'
                           ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold'
@@ -546,15 +869,7 @@ export default function StudentSettings() {
                     type="button"
                     role="switch"
                     aria-checked={twoFactorEnabled}
-                    onClick={() => {
-                      setTwoFactorEnabled(!twoFactorEnabled)
-                      showToast(
-                        twoFactorEnabled
-                          ? 'Two-step verification disabled.'
-                          : 'Two-step verification enabled.',
-                        'info'
-                      )
-                    }}
+                    onClick={toggle2FA}
                     className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                       twoFactorEnabled ? 'bg-blue-600' : 'bg-slate-200'
                     }`}
@@ -638,7 +953,7 @@ export default function StudentSettings() {
                       Change Password
                     </h2>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Update your login password.
+                      Update your login password securely via Supabase Auth.
                     </p>
                   </div>
                 </div>
@@ -650,6 +965,13 @@ export default function StudentSettings() {
                   </div>
                 )}
 
+                {passwordSuccess && (
+                  <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-700 flex items-center gap-2">
+                    <IconCheck className="w-4 h-4 shrink-0 text-emerald-600" />
+                    <span>{passwordSuccess}</span>
+                  </div>
+                )}
+
                 <form onSubmit={handlePasswordSubmit} className="space-y-3.5">
                   <PasswordInput
                     label="Current Password"
@@ -658,6 +980,7 @@ export default function StudentSettings() {
                     placeholder="Enter current password"
                     size="sm"
                     required
+                    disabled={isUpdatingPassword}
                   />
 
                   <PasswordInput
@@ -667,6 +990,7 @@ export default function StudentSettings() {
                     placeholder="At least 6 characters"
                     size="sm"
                     required
+                    disabled={isUpdatingPassword}
                   />
 
                   <PasswordInput
@@ -676,6 +1000,7 @@ export default function StudentSettings() {
                     placeholder="Re-enter new password"
                     size="sm"
                     required
+                    disabled={isUpdatingPassword}
                   />
 
                   <div className="pt-2">
@@ -683,9 +1008,10 @@ export default function StudentSettings() {
                       type="submit"
                       variant="primary"
                       size="sm"
+                      disabled={isUpdatingPassword}
                       className="w-full justify-center"
                     >
-                      Update Password
+                      {isUpdatingPassword ? 'Updating Password...' : 'Update Password'}
                     </Button>
                   </div>
                 </form>

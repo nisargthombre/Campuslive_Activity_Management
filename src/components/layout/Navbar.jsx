@@ -18,19 +18,15 @@ import {
 import SearchBar from '../common/SearchBar'
 import Badge from '../common/Badge'
 import {
-  getStoredNotifications,
-  saveStoredNotifications,
   getNotificationsForRole,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
   NOTIFICATIONS_EVENT_KEY,
 } from '../../data/notificationsData'
+import { useAuth } from '../../context/AuthContext'
 
 export default function Navbar({
-  user = {
-    name: 'Nisarg',
-    role: 'Student',
-    email: 'nisarg@campus.edu',
-    avatar: 'N',
-  },
+  user = null,
   onToggleMobileMenu,
   isMobileMenuOpen = false,
 }) {
@@ -38,24 +34,37 @@ export default function Navbar({
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false)
-  const [notifications, setNotifications] = useState(() => getNotificationsForRole(user?.role || 'Student'))
-
   const notificationsRef = useRef(null)
   const profileRef = useRef(null)
   const navigate = useNavigate()
 
-  // Keep notifications in sync with other components and tabs
+  let authSignOut = null
+  try {
+    const auth = useAuth()
+    authSignOut = auth?.signOut
+  } catch {
+    authSignOut = null
+  }
+
+  const [notifSyncToken, setNotifSyncToken] = useState(0)
+
+  const notifications = useMemo(() => {
+    return getNotificationsForRole(user?.role || 'student', user)
+  }, [user, notifSyncToken])
+
+  // Keep notifications in sync with other components and tabs via event bus
   useEffect(() => {
     const handleNotificationsUpdate = () => {
-      setNotifications(getNotificationsForRole(user?.role || 'Student'))
+      setNotifSyncToken((t) => t + 1)
     }
+
     window.addEventListener(NOTIFICATIONS_EVENT_KEY, handleNotificationsUpdate)
     window.addEventListener('storage', handleNotificationsUpdate)
     return () => {
       window.removeEventListener(NOTIFICATIONS_EVENT_KEY, handleNotificationsUpdate)
       window.removeEventListener('storage', handleNotificationsUpdate)
     }
-  }, [user?.role])
+  }, [])
 
   // Close dropdowns when clicking outside or pressing Escape
   useEffect(() => {
@@ -103,23 +112,23 @@ export default function Navbar({
   }
 
   const notificationPath =
-    user.role === 'Admin' || user.role === 'Faculty'
+    user?.role === 'Admin' || user?.role === 'Faculty'
       ? '/faculty/notifications'
-      : user.role === 'Super Admin'
+      : user?.role === 'Super Admin'
       ? '/admin/notifications'
       : '/student/notifications'
 
   const profilePath =
-    user.role === 'Admin' || user.role === 'Faculty'
+    user?.role === 'Admin' || user?.role === 'Faculty'
       ? '/faculty/profile'
-      : user.role === 'Super Admin'
+      : user?.role === 'Super Admin'
       ? '/admin/profile'
       : '/student/profile'
 
   const settingsPath =
-    user.role === 'Admin' || user.role === 'Faculty'
+    user?.role === 'Admin' || user?.role === 'Faculty'
       ? '/faculty/settings'
-      : user.role === 'Super Admin'
+      : user?.role === 'Super Admin'
       ? '/admin/settings'
       : '/student/settings'
 
@@ -138,19 +147,15 @@ export default function Navbar({
   // Mark all notifications as read
   const handleMarkAllAsRead = (e) => {
     e.stopPropagation()
-    const all = getStoredNotifications()
-    const currentIds = new Set(notifications.map((n) => n.id))
-    const updated = all.map((n) => (currentIds.has(n.id) ? { ...n, isUnread: false } : n))
-    saveStoredNotifications(updated)
-    setNotifications(getNotificationsForRole(user?.role || 'Student'))
+    const unreadIds = notifications.filter((n) => n.isUnread).map((n) => n.id)
+    markAllNotificationsAsRead(user, unreadIds)
+    setNotifSyncToken((t) => t + 1)
   }
 
   // Click single notification item
   const handleNotificationClick = (notif) => {
-    const all = getStoredNotifications()
-    const updated = all.map((n) => (n.id === notif.id ? { ...n, isUnread: false } : n))
-    saveStoredNotifications(updated)
-    setNotifications(getNotificationsForRole(user?.role || 'Student'))
+    markNotificationAsRead(notif.id, false, user)
+    setNotifSyncToken((t) => t + 1)
     setIsNotificationsOpen(false)
     navigate(notificationPath)
   }
@@ -161,24 +166,32 @@ export default function Navbar({
     navigate(path)
   }
 
-  // Mock logout
-  const handleLogout = () => {
+  // Real logout via AuthContext signOut
+  const handleLogout = async () => {
     setIsProfileOpen(false)
     try {
-      localStorage.removeItem('campuslive_user')
-      localStorage.removeItem('campuslive_auth_session')
-      sessionStorage.clear()
-    } catch {
-      // ignore
+      if (typeof authSignOut === 'function') {
+        await authSignOut()
+      }
+    } catch (err) {
+      console.error('Logout error:', err)
+    } finally {
+      try {
+        localStorage.removeItem('campuslive_user')
+        localStorage.removeItem('campuslive_auth_session')
+        sessionStorage.clear()
+      } catch {
+        // ignore
+      }
+      navigate('/login')
     }
-    navigate('/login')
   }
 
   // Search submit on Enter
   const handleSearchKeyDown = (e) => {
     if (e.key === 'Enter' && searchValue.trim()) {
       const searchTarget =
-        user.role === 'Admin' || user.role === 'Faculty'
+        user?.role === 'Admin' || user?.role === 'Faculty'
           ? `/faculty/activities?search=${encodeURIComponent(searchValue.trim())}`
           : `/student/activities?search=${encodeURIComponent(searchValue.trim())}`
       navigate(searchTarget)
@@ -399,7 +412,7 @@ export default function Navbar({
             <button
               type="button"
               onClick={toggleProfile}
-              aria-label={`Open profile menu for ${user.name}`}
+              aria-label={`Open profile menu for ${user?.name || 'User'}`}
               aria-haspopup="menu"
               aria-expanded={isProfileOpen}
               className={`flex items-center gap-2.5 sm:gap-3 p-1 sm:px-2 rounded-xl transition-all cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
@@ -409,24 +422,63 @@ export default function Navbar({
               }`}
             >
               {/* Avatar */}
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-semibold text-xs flex items-center justify-center ring-2 ring-white shadow-2xs shrink-0">
-                {user.avatar || 'N'}
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-semibold text-xs flex items-center justify-center ring-2 ring-white shadow-2xs shrink-0 overflow-hidden relative">
+                {user?.avatar &&
+                typeof user.avatar === 'string' &&
+                (user.avatar.startsWith('http') ||
+                  user.avatar.startsWith('data:') ||
+                  user.avatar.startsWith('blob:')) ? (
+                  <img
+                    src={user.avatar}
+                    alt={user?.name || 'User'}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                      const fallback = e.currentTarget.parentElement?.querySelector('.avatar-monogram')
+                      if (fallback) fallback.style.display = 'flex'
+                    }}
+                  />
+                ) : null}
+                <span
+                  className="avatar-monogram flex items-center justify-center w-full h-full"
+                  style={{
+                    display:
+                      user?.avatar &&
+                      typeof user.avatar === 'string' &&
+                      (user.avatar.startsWith('http') ||
+                        user.avatar.startsWith('data:') ||
+                        user.avatar.startsWith('blob:'))
+                        ? 'none'
+                        : 'flex',
+                  }}
+                >
+                  {typeof user?.avatar === 'string' &&
+                  !user.avatar.startsWith('http') &&
+                  !user.avatar.startsWith('data:') &&
+                  !user.avatar.startsWith('blob:')
+                    ? user.avatar
+                    : user?.name
+                    ? user.name.trim().charAt(0).toUpperCase()
+                    : 'S'}
+                </span>
               </div>
 
               {/* Name + Role */}
               <div className="hidden md:block text-left">
                 <div className="text-xs font-semibold text-slate-900 leading-tight">
-                  {user.name}
+                  {user?.name || ''}
                 </div>
-                <div className="mt-0.5">
-                  <Badge
-                    variant={roleBadgeVariants[user.role] || 'primary'}
-                    size="sm"
-                    className="text-[10px] py-0 px-1.5 font-medium"
-                  >
-                    {user.role}
-                  </Badge>
-                </div>
+                {user?.role && (
+                  <div className="mt-0.5">
+                    <Badge
+                      variant={roleBadgeVariants[user.role] || 'primary'}
+                      size="sm"
+                      className="text-[10px] py-0 px-1.5 font-medium"
+                    >
+                      {user.role}
+                    </Badge>
+                  </div>
+                )}
               </div>
 
               {/* Dropdown Arrow */}
@@ -446,25 +498,33 @@ export default function Navbar({
               >
                 {/* User Summary Header */}
                 <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3 bg-slate-50/50">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-semibold text-sm flex items-center justify-center ring-2 ring-white shadow-2xs shrink-0">
-                    {user.avatar || 'N'}
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-semibold text-sm flex items-center justify-center ring-2 ring-white shadow-2xs shrink-0 overflow-hidden">
+                    {user?.avatar && (typeof user.avatar === 'string' && (user.avatar.startsWith('http') || user.avatar.startsWith('data:') || user.avatar.startsWith('blob:'))) ? (
+                      <img src={user.avatar} alt={user?.name || 'User'} className="w-full h-full object-cover" />
+                    ) : (
+                      user?.avatar || (user?.name ? user.name.trim().charAt(0).toUpperCase() : '')
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-semibold text-slate-900 truncate">
-                      {user.name}
+                      {user?.name || 'User'}
                     </div>
-                    <div className="text-xs text-slate-400 truncate">
-                      {user.email}
-                    </div>
-                    <div className="mt-1">
-                      <Badge
-                        variant={roleBadgeVariants[user.role] || 'primary'}
-                        size="sm"
-                        className="text-[10px] py-0 px-1.5 font-medium"
-                      >
-                        {user.role}
-                      </Badge>
-                    </div>
+                    {user?.email && (
+                      <div className="text-xs text-slate-400 truncate">
+                        {user.email}
+                      </div>
+                    )}
+                    {user?.role && (
+                      <div className="mt-1">
+                        <Badge
+                          variant={roleBadgeVariants[user.role] || 'primary'}
+                          size="sm"
+                          className="text-[10px] py-0 px-1.5 font-medium"
+                        >
+                          {user.role}
+                        </Badge>
+                      </div>
+                    )}
                   </div>
                 </div>
 

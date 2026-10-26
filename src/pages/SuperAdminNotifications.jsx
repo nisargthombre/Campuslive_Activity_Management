@@ -15,11 +15,7 @@ import {
   IconCheck,
   IconClose,
   IconSearch,
-  IconFilter,
   IconEye,
-  IconClock,
-  IconUsers,
-  IconUser,
   IconAlertCircle,
   IconLock,
 } from '../components/icons/Icons'
@@ -189,7 +185,7 @@ export default function SuperAdminNotifications() {
     }
 
     // Determine target audience label
-    let targetSummary = ''
+    let targetSummary
     if (formChannel === 'internal_admin') {
       if (formFacultyScope === 'All Admin/Faculty') {
         targetSummary = 'All Admin/Faculty'

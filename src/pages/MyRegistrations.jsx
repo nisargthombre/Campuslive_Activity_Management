@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import StudentLayout from '../layouts/StudentLayout'
 import PageHeader from '../components/common/PageHeader'
@@ -21,12 +21,40 @@ import {
   IconActivity,
 } from '../components/icons/Icons'
 import { initialRegistrations } from '../data/registrationsData'
+import { supabase } from '../lib/supabase'
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function getThumbnailGradient(category) {
+  const c = (category || '').toLowerCase()
+  switch (c) {
+    case 'workshop':
+      return 'from-blue-600 to-indigo-700'
+    case 'hackathon':
+      return 'from-indigo-600 to-purple-700'
+    case 'competition':
+      return 'from-amber-500 to-orange-600'
+    case 'seminar':
+    case 'webinar':
+      return 'from-sky-600 to-blue-800'
+    case 'cultural':
+      return 'from-pink-600 to-rose-700'
+    case 'sports':
+      return 'from-emerald-600 to-teal-700'
+    case 'technical':
+      return 'from-cyan-600 to-blue-700'
+    default:
+      return 'from-blue-600 to-indigo-700'
+  }
+}
 
 export default function MyRegistrations() {
   const navigate = useNavigate()
 
   // Registrations state
   const [registrations, setRegistrations] = useState(initialRegistrations)
+  const [isCancelling, setIsCancelling] = useState(false)
   const [activeTab, setActiveTab] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -34,7 +62,63 @@ export default function MyRegistrations() {
   const [cancelModalItem, setCancelModalItem] = useState(null)
   const [toastMessage, setToastMessage] = useState('')
 
-  // Counts calculated dynamically
+  // Fetch live authenticated registrations with demo fallback
+  useEffect(() => {
+    let ignore = false
+
+    const loadInitial = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        const token = session?.access_token
+
+        // Check if running in offline Demo Mode (no active Supabase session)
+        if (!token) {
+          const localUser = localStorage.getItem('campuslive_user')
+          if (localUser) {
+            if (!ignore) setRegistrations(initialRegistrations)
+            return
+          }
+          if (!ignore) setRegistrations(initialRegistrations)
+          return
+        }
+
+        // Fetch live authenticated registrations from backend API
+        const response = await fetch(`${API_BASE_URL}/api/registrations/my`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        })
+
+        if (!response.ok) {
+          const errJson = await response.json().catch(() => ({}))
+          throw new Error(errJson.message || `Server returned status ${response.status}`)
+        }
+
+        const data = await response.json()
+        if (!ignore) {
+          setRegistrations(data.registrations || [])
+        }
+      } catch (err) {
+        console.warn('[MyRegistrations] Live fetch notice:', err.message)
+        if (!ignore) {
+          setRegistrations(initialRegistrations)
+        }
+      }
+    }
+
+    loadInitial()
+
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  // Counts calculated dynamically from active registrations (excluding cancelled)
   const upcomingCount = useMemo(
     () => registrations.filter((r) => r.status === 'Registered').length,
     [registrations]
@@ -52,7 +136,7 @@ export default function MyRegistrations() {
   const tabItems = [
     { id: 'all', label: 'All Registrations', count: registrations.length },
     { id: 'upcoming', label: 'Upcoming', count: upcomingCount },
-    { id: 'completed', label: 'Completed', count: completedCount },
+    { id: 'completed', label: 'Past Events', count: completedCount },
     { id: 'cancelled', label: 'Cancelled', count: cancelledCount },
   ]
 
@@ -67,40 +151,88 @@ export default function MyRegistrations() {
       // Search query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
-        const matches =
-          reg.title.toLowerCase().includes(q) ||
-          reg.category.toLowerCase().includes(q) ||
-          reg.venue.toLowerCase().includes(q) ||
-          reg.registrationId.toLowerCase().includes(q) ||
-          reg.organizer.toLowerCase().includes(q)
-        if (!matches) return false
+        const titleMatch = (reg.title || '').toLowerCase().includes(q)
+        const catMatch = (reg.category || '').toLowerCase().includes(q)
+        const venueMatch = (reg.venue || '').toLowerCase().includes(q)
+        const regIdMatch = (reg.registrationId || '').toLowerCase().includes(q)
+        const orgMatch = (reg.organizer || '').toLowerCase().includes(q)
+
+        if (!titleMatch && !catMatch && !venueMatch && !regIdMatch && !orgMatch) {
+          return false
+        }
       }
 
       return true
     })
   }, [registrations, activeTab, searchQuery])
 
-  // Confirm cancel registration
-  const handleConfirmCancel = () => {
-    if (!cancelModalItem) return
+  // Confirm cancel registration with backend sync
+  const handleConfirmCancel = async () => {
+    if (!cancelModalItem || isCancelling) return
+    setIsCancelling(true)
 
-    setRegistrations((prev) =>
-      prev.map((item) =>
-        item.id === cancelModalItem.id
-          ? {
-              ...item,
-              status: 'Cancelled',
-              statusVariant: 'neutral',
-              tabGroup: 'cancelled',
-              cancellationReason: 'Cancelled by student',
-            }
-          : item
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      const token = session?.access_token
+
+      const isRealDbActivity = UUID_REGEX.test(String(cancelModalItem.activityId || ''))
+
+      // If token and real database UUID exist, cancel via backend endpoint
+      if (token && isRealDbActivity) {
+        const res = await fetch(`${API_BASE_URL}/api/registrations/cancel`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ activityId: cancelModalItem.activityId }),
+        })
+
+        const resData = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(resData.message || 'Failed to cancel registration on the server.')
+        }
+      } else if (!isRealDbActivity) {
+        // Safe client-side demo cancellation update
+        try {
+          const savedDemo = JSON.parse(localStorage.getItem('campuslive_demo_registrations') || '{}')
+          if (cancelModalItem.activityId) {
+            savedDemo[cancelModalItem.activityId] = false
+          }
+          localStorage.setItem('campuslive_demo_registrations', JSON.stringify(savedDemo))
+        } catch {
+          // Ignore localStorage errors
+        }
+      }
+
+      // Update local state
+      setRegistrations((prev) =>
+        prev.map((item) =>
+          item.id === cancelModalItem.id
+            ? {
+                ...item,
+                status: 'Cancelled',
+                statusVariant: 'neutral',
+                tabGroup: 'cancelled',
+                cancellationReason: 'Cancelled by student',
+              }
+            : item
+        )
       )
-    )
 
-    setToastMessage(`Registration for "${cancelModalItem.title}" has been cancelled.`)
-    setCancelModalItem(null)
-    setTimeout(() => setToastMessage(''), 4000)
+      setToastMessage(`Registration for "${cancelModalItem.title}" has been cancelled.`)
+      setCancelModalItem(null)
+      setTimeout(() => setToastMessage(''), 4000)
+    } catch (err) {
+      console.error('[MyRegistrations] Cancel error:', err)
+      setToastMessage(err.message || 'Error cancelling registration. Please try again.')
+      setTimeout(() => setToastMessage(''), 4000)
+    } finally {
+      setIsCancelling(false)
+    }
   }
 
   return (
@@ -156,13 +288,13 @@ export default function MyRegistrations() {
         />
 
         <StatCard
-          title="Completed Activities"
+          title="Past Activities"
           value={String(completedCount)}
           icon={<IconCheck className="w-5 h-5 text-emerald-600" />}
           iconBg="bg-emerald-50 text-emerald-600"
-          change="Participated"
-          changeType="positive"
-          helperText="Verified attendance recorded"
+          change="Concluded"
+          changeType="neutral"
+          helperText="Concluded campus event registrations"
         />
 
         <StatCard
@@ -232,7 +364,7 @@ export default function MyRegistrations() {
               : activeTab === 'upcoming'
               ? 'No upcoming registrations'
               : activeTab === 'completed'
-              ? 'No completed activities yet'
+              ? 'No past activities yet'
               : activeTab === 'cancelled'
               ? 'No cancelled registrations'
               : 'No registrations found'
@@ -243,7 +375,7 @@ export default function MyRegistrations() {
               : activeTab === 'upcoming'
               ? 'You have not registered for any upcoming events. Explore campus workshops and hackathons!'
               : activeTab === 'completed'
-              ? 'Your completed and attended activities will appear here once faculty verifies attendance.'
+              ? 'Your registered activities that have concluded will appear here.'
               : activeTab === 'cancelled'
               ? 'You have not cancelled any registrations.'
               : 'Discover workshops, competitions, and seminars happening on campus.'
@@ -281,7 +413,7 @@ export default function MyRegistrations() {
             >
               {/* Thumbnail Strip */}
               <div
-                className={`w-full sm:w-44 md:w-52 bg-gradient-to-br ${reg.thumbnailGradient} p-4 flex flex-col justify-between shrink-0 relative overflow-hidden text-white`}
+                className={`w-full sm:w-44 md:w-52 bg-gradient-to-br ${reg.thumbnailGradient || getThumbnailGradient(reg.category)} p-4 flex flex-col justify-between shrink-0 relative overflow-hidden text-white`}
               >
                 <div className="absolute -right-4 -bottom-4 w-20 h-20 rounded-full bg-white/10 blur-xs pointer-events-none" />
                 <div className="absolute right-3 top-3 text-white/20 pointer-events-none">
@@ -320,7 +452,7 @@ export default function MyRegistrations() {
                     )}
                     {reg.status === 'Completed' && (
                       <Badge variant="success" size="md" dot>
-                        Completed &bull; Attended
+                        Concluded
                       </Badge>
                     )}
                     {reg.status === 'Cancelled' && (
@@ -359,14 +491,7 @@ export default function MyRegistrations() {
                     </div>
                   </div>
 
-                  {/* Attendance Note / Cancellation Reason */}
-                  {reg.attendanceNote && (
-                    <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg">
-                      <IconCheck className="w-3.5 h-3.5" />
-                      <span>{reg.attendanceNote}</span>
-                    </div>
-                  )}
-
+                  {/* Cancellation Reason */}
                   {reg.cancellationReason && (
                     <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
                       <IconAlertCircle className="w-3.5 h-3.5 text-slate-400" />

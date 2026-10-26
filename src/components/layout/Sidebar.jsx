@@ -42,7 +42,13 @@ export default function Sidebar({
 
   const renderNavItem = (item, idx) => {
     const IconComponent = iconMap[item.icon] || IconActivity
-    const isActive = location.pathname === item.path
+    const isActive =
+      location.pathname === item.path ||
+      (item.path !== '/' &&
+        item.path !== '/student' &&
+        item.path !== '/faculty' &&
+        item.path !== '/admin' &&
+        location.pathname.startsWith(item.path + '/'))
 
     return (
       <div key={idx} className={item.isAction ? 'pt-2 mt-2 border-t border-slate-100' : ''}>
@@ -73,7 +79,7 @@ export default function Sidebar({
           <span className="truncate">{item.label}</span>
         </div>
 
-        {item.badge && (
+        {Boolean(item.badge) && item.badge !== '0' && item.badge !== 0 && (
           <span
             className={`
               ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full
@@ -126,7 +132,7 @@ export default function Sidebar({
       )}
 
       {/* Desktop Persistent Sidebar */}
-      <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:shrink-0 bg-white border-r border-slate-200 min-h-[calc(100vh-4rem)]">
+      <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:shrink-0 bg-white border-r border-slate-200 min-h-[calc(100vh-4rem)] relative z-10">
         {sidebarContent}
       </aside>
 

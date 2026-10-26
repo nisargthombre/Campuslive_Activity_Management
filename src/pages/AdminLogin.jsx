@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import {
   CampusLogo,
   IconMail,
@@ -15,6 +15,8 @@ import Badge from '../components/common/Badge'
 
 export default function AdminLogin() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const fromPath = location.state?.from?.pathname || '/faculty/dashboard'
 
   // Form State
   const [email, setEmail] = useState('')
@@ -72,10 +74,11 @@ export default function AdminLogin() {
             department: 'Computer Science & Engineering',
           })
         )
+        window.dispatchEvent(new Event('campuslive_auth_updated'))
       } catch {
         // ignore
       }
-      navigate('/faculty/dashboard')
+      navigate(fromPath, { replace: true })
     }, 700)
   }
 

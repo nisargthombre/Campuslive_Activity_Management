@@ -14,24 +14,76 @@ import {
 } from '../components/icons/Icons'
 import {
   notificationCategories,
-  getStoredNotifications,
-  saveStoredNotifications,
   getNotificationsForRole,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
   NOTIFICATIONS_EVENT_KEY,
 } from '../data/notificationsData'
+import { useAuth } from '../context/AuthContext'
 
 export default function StudentNotifications() {
   const navigate = useNavigate()
+  const { user, profile } = useAuth()
 
-  // Notifications state strictly filtered for Student role (never internal_admin)
-  const [notifications, setNotifications] = useState(() => getNotificationsForRole('Student'))
+  const activeUser = useMemo(() => {
+    if (profile) {
+      return {
+        id: profile.id || user?.id,
+        name: profile.full_name || profile.fullName || 'Student',
+        fullName: profile.full_name || profile.fullName || 'Student',
+        email: profile.email || user?.email || '',
+        role: profile.role || 'student',
+        studentId: profile.student_id || profile.studentId,
+        department: profile.department,
+        course: profile.course,
+        academicYear: profile.academic_year || profile.academicYear,
+      }
+    }
+    if (user) {
+      return {
+        id: user.id,
+        name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Student',
+        fullName: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Student',
+        email: user.email || '',
+        role: user.user_metadata?.role || 'student',
+      }
+    }
+    try {
+      const raw = localStorage.getItem('campuslive_user')
+      if (raw) {
+        const localUser = JSON.parse(raw)
+        return {
+          id: localUser.id || 'demo-user',
+          name: localUser.name || 'Student',
+          fullName: localUser.name || 'Student',
+          email: localUser.email || '',
+          role: localUser.role || 'student',
+          department: localUser.department,
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return null
+  }, [profile, user])
+
+  // Revision token to synchronize notifications when read state is toggled
+  const [syncToken, setSyncToken] = useState(0)
+
+  // Notifications list derived for student role and active user identity
+  const notifications = useMemo(() => {
+    return getNotificationsForRole('student', activeUser)
+  }, [activeUser, syncToken])
+
   const [activeFilter, setActiveFilter] = useState('All')
   const [toast, setToast] = useState(null)
 
+  // Synchronize notifications across components and browser storage events
   useEffect(() => {
     const handleSync = () => {
-      setNotifications(getNotificationsForRole('Student'))
+      setSyncToken((t) => t + 1)
     }
+
     window.addEventListener(NOTIFICATIONS_EVENT_KEY, handleSync)
     window.addEventListener('storage', handleSync)
     return () => {
@@ -48,13 +100,19 @@ export default function StudentNotifications() {
   )
   const readCount = totalCount - unreadCount
 
+  // Available categories for student view (excludes internal_admin)
+  const studentCategories = useMemo(
+    () => notificationCategories.filter((cat) => cat !== 'Internal Admin'),
+    []
+  )
+
   // Counts per category
   const categoryCounts = useMemo(() => {
     const counts = {
       All: notifications.length,
       Unread: notifications.filter((n) => n.isUnread).length,
     }
-    notificationCategories.forEach((cat) => {
+    studentCategories.forEach((cat) => {
       if (cat !== 'All' && cat !== 'Unread') {
         counts[cat] = notifications.filter(
           (n) => n.category.toLowerCase() === cat.toLowerCase()
@@ -62,7 +120,7 @@ export default function StudentNotifications() {
       }
     })
     return counts
-  }, [notifications])
+  }, [notifications, studentCategories])
 
   // Filtered notifications
   const filteredNotifications = useMemo(() => {
@@ -83,20 +141,15 @@ export default function StudentNotifications() {
 
   // Mark a single notification as read/unread
   const handleToggleRead = (id) => {
-    const all = getStoredNotifications()
-    const updated = all.map((n) => {
-      if (n.id === id) {
-        const nextState = !n.isUnread
-        showToast(
-          nextState ? 'Marked as unread.' : 'Notification marked as read.',
-          'info'
-        )
-        return { ...n, isUnread: nextState }
-      }
-      return n
-    })
-    saveStoredNotifications(updated)
-    setNotifications(getNotificationsForRole('Student'))
+    const target = notifications.find((n) => n.id === id)
+    if (!target) return
+    const nextIsUnread = !target.isUnread
+    markNotificationAsRead(id, nextIsUnread, activeUser)
+    setSyncToken((t) => t + 1)
+    showToast(
+      nextIsUnread ? 'Marked as unread.' : 'Notification marked as read.',
+      'info'
+    )
   }
 
   // Mark all as read
@@ -105,12 +158,13 @@ export default function StudentNotifications() {
       showToast('All notifications are already marked as read.', 'info')
       return
     }
-    const all = getStoredNotifications()
-    const currentIds = new Set(notifications.map((n) => n.id))
-    const updated = all.map((n) => (currentIds.has(n.id) ? { ...n, isUnread: false } : n))
-    saveStoredNotifications(updated)
-    setNotifications(getNotificationsForRole('Student'))
-    showToast(`Marked ${unreadCount} notification${unreadCount > 1 ? 's' : ''} as read.`, 'success')
+    const unreadTargetIds = notifications.filter((n) => n.isUnread).map((n) => n.id)
+    markAllNotificationsAsRead(activeUser, unreadTargetIds)
+    setSyncToken((t) => t + 1)
+    showToast(
+      `Marked ${unreadCount} notification${unreadCount > 1 ? 's' : ''} as read.`,
+      'success'
+    )
   }
 
   // Handle click on related action
@@ -209,7 +263,7 @@ export default function StudentNotifications() {
       <div className="bg-white rounded-xl border border-slate-200 p-3.5 mb-6 shadow-xs flex items-center justify-between gap-4 overflow-x-auto">
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-none py-0.5">
           <span className="text-xs font-semibold text-slate-500 mr-1 shrink-0">Filter:</span>
-          {notificationCategories.map((cat) => {
+          {studentCategories.map((cat) => {
             const isSelected = activeFilter.toLowerCase() === cat.toLowerCase()
             const count = categoryCounts[cat] ?? 0
             return (

@@ -16,8 +16,6 @@ import {
   IconBell,
   IconSupport,
   IconClipboardCheck,
-  IconClock,
-  IconUsers,
 } from '../components/icons/Icons'
 import {
   getStoredSystemSettings,

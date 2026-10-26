@@ -4,7 +4,7 @@ export const studentNav = [
   { label: 'My Registrations', path: '/student/my-registrations', icon: 'clipboard' },
   { label: 'My Activity', path: '/student/my-activity', icon: 'activity' },
   { label: 'Clubs', path: '/student/clubs', icon: 'clubs' },
-  { label: 'Notifications', path: '/student/notifications', icon: 'bell', badge: '3' },
+  { label: 'Notifications', path: '/student/notifications', icon: 'bell' },
   { label: 'Support', path: '/student/support', icon: 'support' },
   { label: 'Logout', path: '/login', icon: 'logout', isAction: true },
 ]

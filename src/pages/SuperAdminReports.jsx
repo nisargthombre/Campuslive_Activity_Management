@@ -21,11 +21,6 @@ import {
   IconClose,
   IconChevronDown,
   IconEye,
-  IconAlertCircle,
-  IconClock,
-  IconMapPin,
-  IconMail,
-  IconPhone,
 } from '../components/icons/Icons'
 import {
   reportTypes,

@@ -21,13 +21,15 @@ import {
   IconClubs,
   IconPlus,
 } from '../components/icons/Icons'
+import { supabase } from '../lib/supabase'
 import {
-  superAdminStaffSummary,
   initialSuperAdminStaff,
 } from '../data/superAdminStaffData'
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+
 export default function SuperAdminStaff() {
-  // Main Staff State (Local/Mock)
+  // Main Staff State
   const [staffList, setStaffList] = useState(initialSuperAdminStaff)
 
   // Filters State
@@ -43,12 +45,13 @@ export default function SuperAdminStaff() {
   const [editErrors, setEditErrors] = useState({})
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const [createFormData, setCreateFormData] = useState({
     name: '',
     email: '',
     staffId: '',
     department: 'Computer Engineering',
-    role: 'Admin',
     password: '',
     confirmPassword: '',
   })
@@ -85,6 +88,20 @@ export default function SuperAdminStaff() {
       return matchesSearch && matchesDept && matchesStatus && matchesRole
     })
   }, [staffList, searchQuery, departmentFilter, statusFilter, roleFilter])
+
+  // Dynamically compute summary stats reflecting staffList additions
+  const staffSummary = useMemo(() => {
+    const totalStaff = staffList.length
+    const activeStaff = staffList.filter((s) => s.status === 'Active').length
+    const inactiveStaff = staffList.filter((s) => s.status !== 'Active').length
+    const departments = new Set(staffList.map((s) => s.department).filter(Boolean)).size
+    return {
+      totalStaff,
+      activeStaff,
+      inactiveStaff,
+      departments,
+    }
+  }, [staffList])
 
   const hasActiveFilters =
     Boolean(searchQuery.trim()) ||
@@ -205,16 +222,19 @@ export default function SuperAdminStaff() {
       email: '',
       staffId: `ADM-2026-0${Math.floor(10 + Math.random() * 89)}`,
       department: 'Computer Engineering',
-      role: 'Admin',
       password: '',
       confirmPassword: '',
     })
     setCreateErrors({})
+    setSubmitError('')
   }
 
-  // Validate & Create Account
-  const handleCreateAccount = (e) => {
-    e.preventDefault()
+  // Validate & Create Account via POST /api/admin/users
+  const handleCreateAccount = async (e) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault()
+    }
+
     const errors = {}
 
     if (!createFormData.name?.trim()) {
@@ -225,21 +245,18 @@ export default function SuperAdminStaff() {
     } else if (
       !/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(createFormData.email.trim())
     ) {
-      errors.email = 'Please enter a valid email address'
+      errors.email = 'Please enter a valid email address (e.g. staff@campus.edu)'
     }
     if (!createFormData.staffId?.trim()) {
       errors.staffId = 'Staff ID is required'
     }
-    if (!createFormData.department) {
+    if (!createFormData.department?.trim()) {
       errors.department = 'Department is required'
-    }
-    if (!['Admin', 'Staff'].includes(createFormData.role)) {
-      errors.role = 'Role must be Admin or Staff'
     }
     if (!createFormData.password) {
       errors.password = 'Initial password is required'
-    } else if (createFormData.password.length < 8) {
-      errors.password = 'Password must be at least 8 characters'
+    } else if (createFormData.password.length < 6) {
+      errors.password = 'Password must be at least 6 characters'
     }
     if (!createFormData.confirmPassword) {
       errors.confirmPassword = 'Password confirmation is required'
@@ -252,31 +269,116 @@ export default function SuperAdminStaff() {
       return
     }
 
-    // New staff member record (password is NOT stored in visible mock state)
-    const newStaffMember = {
-      id: `STF-2026-${Math.floor(300 + Math.random() * 699)}`,
-      name: createFormData.name.trim(),
-      email: createFormData.email.trim().toLowerCase(),
-      staffId: createFormData.staffId.trim().toUpperCase(),
-      role: createFormData.role,
-      department: createFormData.department,
-      designation:
-        createFormData.role === 'Admin'
-          ? 'Department Activity Coordinator'
-          : 'Support & Program Staff',
-      phone: '+91 98000 00000',
-      status: 'Active',
-      createdDate: '23 Sep 2026',
-    }
+    setIsSubmitting(true)
+    setSubmitError('')
 
-    setStaffList((prev) => [newStaffMember, ...prev])
-    setIsCreateModalOpen(false)
-    setActionNotice({
-      type: 'success',
-      message:
-        'Admin/Staff account created successfully. Provide the login credentials to the staff member securely.',
-    })
-    setTimeout(() => setActionNotice(null), 5000)
+    try {
+      // 1. Get authenticated Supabase session access token
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+
+      if (sessionError || !session || !session.access_token) {
+        setIsSubmitting(false)
+        setSubmitError(
+          'Authentication required. Your session has expired. Please sign in again as Super Admin.'
+        )
+        return
+      }
+
+      // 2. Transmit strictly whitelisted fields
+      const payload = {
+        full_name: createFormData.name.trim(),
+        email: createFormData.email.trim(),
+        staff_id: createFormData.staffId.trim(),
+        department: createFormData.department.trim(),
+        initial_password: createFormData.password,
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/admin/users`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (response.status === 201) {
+        const createdUser = data.user || {}
+
+        // Add newly created Admin to table
+        const newStaffMember = {
+          id: createdUser.id || `ADM-${Date.now()}`,
+          name: createdUser.full_name || createFormData.name.trim(),
+          email: createdUser.email || createFormData.email.trim().toLowerCase(),
+          staffId: createdUser.staff_id || createFormData.staffId.trim().toUpperCase(),
+          role: 'Admin',
+          department: createdUser.department || createFormData.department,
+          designation: 'Department Activity Coordinator',
+          phone: '+91 98000 00000',
+          status: createdUser.is_active ? 'Active' : 'Inactive',
+          createdDate: new Date(createdUser.created_at || Date.now()).toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          }),
+        }
+
+        // Refresh staff list and summary counts
+        setStaffList((prev) => [newStaffMember, ...prev])
+        setIsCreateModalOpen(false)
+
+        // Clear form (passwords never persisted)
+        setCreateFormData({
+          name: '',
+          email: '',
+          staffId: '',
+          department: 'Computer Engineering',
+          password: '',
+          confirmPassword: '',
+        })
+        setCreateErrors({})
+        setSubmitError('')
+
+        setActionNotice({
+          type: 'success',
+          message: `Admin account for ${newStaffMember.name} created successfully.`,
+        })
+        setTimeout(() => setActionNotice(null), 5000)
+      } else if (response.status === 400) {
+        setSubmitError(data.message || 'Validation error. Please verify the entered fields.')
+      } else if (response.status === 401) {
+        setSubmitError('Unauthorized: Your session has expired. Please sign in again.')
+      } else if (response.status === 403) {
+        setSubmitError(
+          'Forbidden: Access denied. You must be signed in with Super Admin privileges to create Admin accounts.'
+        )
+      } else if (response.status === 409) {
+        if (data.code === 'EMAIL_ALREADY_EXISTS') {
+          setCreateErrors((prev) => ({ ...prev, email: data.message || 'Email is already registered' }))
+        } else if (data.code === 'STAFF_ID_ALREADY_EXISTS') {
+          setCreateErrors((prev) => ({ ...prev, staffId: data.message || 'Staff ID is already in use' }))
+        }
+        setSubmitError(data.message || 'An account with this email or Staff ID already exists.')
+      } else {
+        setSubmitError(
+          data.message || 'A server error occurred while creating the account. Please try again.'
+        )
+      }
+    } catch (err) {
+      const isNetError = err?.message?.includes('fetch') || err?.name === 'TypeError'
+      setSubmitError(
+        isNetError
+          ? 'Unable to connect to the backend server. Please verify backend is running on http://localhost:5000.'
+          : err?.message || 'An unexpected error occurred while creating the account.'
+      )
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   // Avatar Initials Hash
@@ -313,7 +415,7 @@ export default function SuperAdminStaff() {
               icon={<IconPlus className="w-4 h-4" />}
               onClick={handleOpenCreate}
             >
-              Create Admin / Staff Account
+              Add Admin Account
             </Button>
           </div>
         }
@@ -352,28 +454,28 @@ export default function SuperAdminStaff() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           title="Total Admin / Staff"
-          value={superAdminStaffSummary.totalStaff}
+          value={staffSummary.totalStaff}
           icon={<IconUsers className="w-5 h-5 text-blue-600" />}
           iconBg="bg-blue-50 text-blue-600"
           helperText="All authorized institutional accounts"
         />
         <StatCard
           title="Active Admin / Staff"
-          value={superAdminStaffSummary.activeStaff}
+          value={staffSummary.activeStaff}
           icon={<IconCheck className="w-5 h-5 text-emerald-600" />}
           iconBg="bg-emerald-50 text-emerald-600"
           helperText="Accounts in active standing"
         />
         <StatCard
           title="Inactive Admin / Staff"
-          value={superAdminStaffSummary.inactiveStaff}
+          value={staffSummary.inactiveStaff}
           icon={<IconAlertCircle className="w-5 h-5 text-slate-500" />}
           iconBg="bg-slate-100 text-slate-600"
           helperText="Deactivated or suspended accounts"
         />
         <StatCard
           title="Departments"
-          value={superAdminStaffSummary.departments}
+          value={staffSummary.departments}
           icon={<IconClubs className="w-5 h-5 text-indigo-600" />}
           iconBg="bg-indigo-50 text-indigo-600"
           helperText="Covered academic divisions"
@@ -888,13 +990,19 @@ export default function SuperAdminStaff() {
       )}
 
       {/* ============================================================== */}
-      {/* 7. CREATE ADMIN / STAFF ACCOUNT MODAL                          */}
+      {/* 7. CREATE ADMIN ACCOUNT MODAL                                  */}
       {/* ============================================================== */}
       {isCreateModalOpen && (
         <Modal
           isOpen={isCreateModalOpen}
-          onClose={() => setIsCreateModalOpen(false)}
-          title="Create Admin / Staff Account"
+          onClose={() => {
+            if (!isSubmitting) {
+              setIsCreateModalOpen(false)
+              setSubmitError('')
+              setCreateErrors({})
+            }
+          }}
+          title="Create Admin Account"
           size="xl"
           footer={
             <div className="flex items-center justify-end gap-2.5 w-full">
@@ -902,7 +1010,12 @@ export default function SuperAdminStaff() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setIsCreateModalOpen(false)}
+                disabled={isSubmitting}
+                onClick={() => {
+                  setIsCreateModalOpen(false)
+                  setSubmitError('')
+                  setCreateErrors({})
+                }}
               >
                 Cancel
               </Button>
@@ -910,17 +1023,26 @@ export default function SuperAdminStaff() {
                 type="button"
                 variant="primary"
                 size="sm"
+                isLoading={isSubmitting}
+                disabled={isSubmitting}
                 onClick={handleCreateAccount}
               >
-                Create Admin / Staff Account
+                Create Admin Account
               </Button>
             </div>
           }
         >
           <form onSubmit={handleCreateAccount} className="space-y-4">
             <p className="text-xs text-slate-500">
-              Directly create and provision an authorized administrative account. Set an initial password and securely communicate the credentials to the staff member.
+              Directly create and provision an authorized administrative account. The account is assigned the system role <strong className="text-slate-700">Admin</strong>.
             </p>
+
+            {submitError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium flex items-center gap-2">
+                <IconAlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{submitError}</span>
+              </div>
+            )}
 
             {/* Row 1: Full Name & Official College Email */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -993,29 +1115,13 @@ export default function SuperAdminStaff() {
               />
             </div>
 
-            {/* Row 3: Role (Admin vs Staff ONLY) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <Select
-                label="Administrative Role"
-                id="create-staff-role"
-                name="role"
-                value={createFormData.role}
-                onChange={(e) =>
-                  setCreateFormData((prev) => ({ ...prev, role: e.target.value }))
-                }
-                options={['Admin', 'Staff']}
-                error={createErrors.role}
-                required
-              />
-            </div>
-
-            {/* Row 4: Initial Password & Confirm Password */}
+            {/* Row 3: Initial Password & Confirm Password */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <PasswordInput
                 label="Initial Password"
                 id="create-staff-password"
                 name="password"
-                placeholder="Minimum 8 characters"
+                placeholder="Minimum 6 characters"
                 value={createFormData.password}
                 onChange={(e) =>
                   setCreateFormData((prev) => ({ ...prev, password: e.target.value }))
@@ -1045,7 +1151,7 @@ export default function SuperAdminStaff() {
             <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-lg text-xs text-blue-900 flex items-start gap-2">
               <IconAlertCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
               <span>
-                Set an initial password for this account and provide the login credentials to the staff member securely.
+                Set an initial password for this account (minimum 6 characters) and securely communicate the credentials to the administrator.
               </span>
             </div>
 

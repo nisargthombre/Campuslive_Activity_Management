@@ -18,7 +18,6 @@ import {
   IconAlertCircle,
   IconCamera,
   IconActivity,
-  IconUsers,
   IconMail,
   IconPhone,
 } from '../components/icons/Icons'

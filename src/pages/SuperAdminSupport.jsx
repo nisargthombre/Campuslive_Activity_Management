@@ -15,15 +15,7 @@ import {
   IconCheck,
   IconClose,
   IconSearch,
-  IconFilter,
-  IconEye,
   IconClock,
-  IconUsers,
-  IconUser,
-  IconAlertCircle,
-  IconMail,
-  IconPhone,
-  IconEdit,
 } from '../components/icons/Icons'
 import {
   getStoredUnifiedTickets,
@@ -31,7 +23,6 @@ import {
   UNIFIED_SUPPORT_EVENT_KEY,
   supportCategoriesList,
   supportPrioritiesList,
-  supportStatusesList,
   supportAssigneesList,
 } from '../data/unifiedSupportData'
 

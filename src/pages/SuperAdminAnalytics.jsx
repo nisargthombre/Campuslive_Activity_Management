@@ -12,22 +12,18 @@ import {
   IconUsers,
   IconUser,
   IconTrendingUp,
-  IconChart,
   IconFilter,
   IconCheck,
   IconChevronDown,
   IconClose,
   IconClubs,
   IconSupport,
-  IconClock,
   IconMapPin,
   IconAlertCircle,
 } from '../components/icons/Icons'
 import {
   timeRangeOptions,
-  activityTypesList,
   categoryColors,
-  analyticsDatasetsByRange,
   clubAnalyticsData,
   supportAnalyticsData,
   upcomingActivitiesData,
@@ -240,10 +236,6 @@ export default function SuperAdminAnalytics() {
 
   const maxDeptRegistrations = useMemo(() => {
     return Math.max(...activeDataset.departmentBreakdown.map((d) => d.registrations), 1)
-  }, [activeDataset])
-
-  const maxDeptActivities = useMemo(() => {
-    return Math.max(...activeDataset.departmentBreakdown.map((d) => d.activities), 1)
   }, [activeDataset])
 
   return (

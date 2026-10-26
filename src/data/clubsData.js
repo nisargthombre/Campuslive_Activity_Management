@@ -7,6 +7,7 @@ export const clubCategories = [
   'Academic',
   'Other',
 ]
+export const CLUBS_EVENT_KEY = 'campuslive_clubs_updated'
 
 export const initialClubsData = [
   {

@@ -7,7 +7,6 @@ import {
   initialUnifiedTickets,
   getStoredUnifiedTickets,
   saveStoredUnifiedTickets,
-  UNIFIED_SUPPORT_EVENT_KEY,
   FACULTY_SUPPORT_EVENT_KEY,
   supportCategoriesList,
   supportPrioritiesList,
