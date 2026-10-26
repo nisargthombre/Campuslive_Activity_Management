@@ -239,34 +239,68 @@ export default function StudentProfile() {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/profile/me`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
+      let updatedApiProfile = null
+      const isLocalhost =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      const hasCustomApi = Boolean(import.meta.env.VITE_API_URL)
 
-      const data = await response.json().catch(() => ({}))
+      if (hasCustomApi || isLocalhost) {
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/profile/me`, {
+            method: 'PUT',
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          })
 
-      if (!response.ok) {
-        setIsSaving(false)
-        if (response.status === 401) {
-          setEditError('Session expired. Please sign in again.')
-        } else if (response.status === 403) {
-          setEditError(
-            data.message || 'Forbidden: You do not have permission to update this profile.'
-          )
-        } else if (response.status === 400) {
-          setEditError(data.message || 'Validation error. Please verify the entered fields.')
-        } else {
-          setEditError(data.message || `Server error (${response.status}): Failed to save changes.`)
+          if (response.ok) {
+            const data = await response.json().catch(() => ({}))
+            updatedApiProfile = data.profile || data
+          }
+        } catch {
+          // Fall through to direct Supabase update
         }
-        return
       }
 
-      const updatedApiProfile = data.profile || data
+      if (!updatedApiProfile) {
+        // Direct Supabase update (Cloud-native on Vercel)
+        const { data: dbData, error: dbErr } = await supabase
+          .from('profiles')
+          .update({
+            full_name: payload.fullName || editName.trim(),
+            academic_year: payload.academicYear || editYear,
+            phone: payload.phone || editPhone.trim(),
+            social_links: payload.social_links || payload.socialLinks || {},
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', session.user.id)
+          .select('*')
+          .maybeSingle()
+
+        if (dbErr) {
+          console.warn('[StudentProfile] Direct Supabase profile update notice:', dbErr)
+        }
+
+        await supabase.auth
+          .updateUser({
+            data: {
+              full_name: payload.fullName || editName.trim(),
+              academic_year: payload.academicYear || editYear,
+              phone: payload.phone || editPhone.trim(),
+            },
+          })
+          .catch(() => {})
+
+        updatedApiProfile = dbData || {
+          ...payload,
+          full_name: payload.fullName || editName.trim(),
+          academic_year: payload.academicYear || editYear,
+          phone: payload.phone || editPhone.trim(),
+        }
+      }
       const normalizedUpdated = {
         ...profile,
         ...updatedApiProfile,

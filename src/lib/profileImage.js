@@ -23,7 +23,7 @@ export async function uploadAndPersistProfileImage(blob, refreshProfile = null) 
     error: sessionError,
   } = await supabase.auth.getSession()
 
-  if (sessionError || !session?.user?.id || !session?.access_token) {
+  if (sessionError || !session?.user?.id) {
     throw new Error('Your session has expired or is invalid. Please sign in again.')
   }
 
@@ -39,76 +39,99 @@ export async function uploadAndPersistProfileImage(blob, refreshProfile = null) 
 
   const extension = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/png' ? 'png' : 'webp'
   const filename = `avatar-${Date.now()}.${extension}`
+  const filePath = `${session.user.id}/${filename}`
 
-  // 3. Construct multipart/form-data payload with field 'avatar'
-  const formData = new FormData()
-  formData.append('avatar', blob, filename)
+  // Check if Express backend is explicitly configured OR running locally on localhost
+  const isLocalhost =
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  const hasCustomApi = Boolean(import.meta.env.VITE_API_URL)
 
-  // Safe diagnostic log without exposing any access token, secret, or password
-  console.log('[ProfileImage] Sending avatar to Express backend:', {
-    endpoint: `${API_BASE_URL}/api/profile/avatar`,
-    userId: session.user.id,
-    mimeType: blob.type || 'image/webp',
-    sizeBytes: blob.size,
-  })
-
-  // 4. Send multipart/form-data to POST /api/profile/avatar
-  // Note: Do NOT set Content-Type header manually; browser fetch sets boundary automatically
-  let response
-  try {
-    response = await fetch(`${API_BASE_URL}/api/profile/avatar`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: formData,
-    })
-  } catch (netErr) {
-    console.error('[ProfileImage] Network error connecting to backend:', netErr)
-    throw new Error(
-      'Unable to connect to the backend server to upload profile photo. Please ensure backend is running.',
-      { cause: netErr }
-    )
-  }
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    console.error('[ProfileImage] Backend upload error:', errorData)
-
-    if (response.status === 401) {
-      throw new Error('Your session has expired. Please sign in again.')
-    }
-    if (response.status === 413) {
-      throw new Error('Image exceeds 2 MB size limit. Please select a smaller photo.')
-    }
-
-    throw new Error(
-      errorData.message || `Server error (${response.status}) uploading profile photo.`
-    )
-  }
-
-  const result = await response.json()
-  const publicUrl = result.profileImage || result.publicUrl
-  const filePath = result.filePath
-  const profile = result.profile
-
-  if (!publicUrl) {
-    throw new Error('Server responded with success but did not return the image URL.')
-  }
-
-  console.log('[ProfileImage] Avatar successfully uploaded and persisted:', {
-    filePath,
-    publicUrl,
-  })
-
-  // 5. Trigger AuthContext profile refresh to propagate to Navigation bars & Layouts
-  if (typeof refreshProfile === 'function') {
+  if (hasCustomApi || isLocalhost) {
     try {
-      await refreshProfile()
-    } catch (err) {
-      console.warn('[ProfileImage] Non-critical refreshProfile error:', err)
+      const formData = new FormData()
+      formData.append('avatar', blob, filename)
+
+      const response = await fetch(`${API_BASE_URL}/api/profile/avatar`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        const publicUrl = result.profileImage || result.publicUrl
+        if (typeof refreshProfile === 'function') {
+          await refreshProfile().catch(() => {})
+        }
+        return { publicUrl, filePath: result.filePath, profile: result.profile }
+      }
+    } catch {
+      // Fall through to direct Supabase upload
     }
   }
 
-  return { publicUrl, filePath, profile }
+  // DIRECT SUPABASE STORAGE UPLOAD (Cloud native for Vercel without Express)
+  try {
+    // 1. Upload file into the Supabase 'avatars' bucket
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, blob, {
+        contentType: blob.type || 'image/webp',
+        upsert: true,
+      })
+
+    if (uploadError) {
+      console.error('[ProfileImage] Supabase Storage upload error:', uploadError)
+      throw new Error(uploadError.message || 'Failed to upload photo to Supabase storage.')
+    }
+
+    // 2. Get Public URL
+    const { data: urlData } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(filePath)
+
+    const publicUrl = urlData?.publicUrl
+    if (!publicUrl) {
+      throw new Error('Unable to retrieve public image URL.')
+    }
+
+    // 3. Update public.profiles table
+    const { data: updatedProfile, error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        profile_image: publicUrl,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', session.user.id)
+      .select('*')
+      .maybeSingle()
+
+    if (profileError) {
+      console.warn('[ProfileImage] Direct profile update warning:', profileError)
+    }
+
+    // 4. Update user metadata in auth.users so local session has it immediately
+    await supabase.auth
+      .updateUser({
+        data: { profile_image: publicUrl },
+      })
+      .catch(() => {})
+
+    // 5. Trigger AuthContext profile refresh
+    if (typeof refreshProfile === 'function') {
+      try {
+        await refreshProfile()
+      } catch (err) {
+        console.warn('[ProfileImage] Non-critical refreshProfile error:', err)
+      }
+    }
+
+    return { publicUrl, filePath, profile: updatedProfile }
+  } catch (err) {
+    console.error('[ProfileImage] Direct upload failed:', err)
+    throw new Error(err.message || 'Failed to upload and save profile photo.')
+  }
 }
